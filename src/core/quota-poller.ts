@@ -126,7 +126,14 @@ export class QuotaPoller extends EventEmitter {
                     reject(new Error('Request timed out'));
                 });
 
-                req.write(JSON.stringify({ wrapper_data: {} }));
+                req.write(JSON.stringify({
+                    wrapper_data: {},
+                    metadata: {
+                        ide_name: 'antigravity',
+                        extension_name: 'antigravity',
+                        locale: 'en'
+                    }
+                }));
                 req.end();
             });
 
@@ -211,7 +218,15 @@ export class QuotaPoller extends EventEmitter {
             if (rawModels.length > 0) {
                 for (const m of rawModels) {
                     // Normalize fields
-                    const modelId = m.model_id || m.modelId || m.id;
+                    // Handle nested modelOrAlias structure (observed in wild)
+                    let modelId = m.model_id || m.modelId || m.id;
+                    if (!modelId && m.modelOrAlias?.model) {
+                        modelId = m.modelOrAlias.model;
+                    }
+
+                    // Handle nested quotaInfo structure (observed in wild)
+                    const quotaInfo = m.quotaInfo || {};
+
                     const modelName = m.model_name || m.modelName || m.name || m.label || modelId;
 
                     // Quota logic: prefer explicit remaining count, else calculate from percentage
@@ -226,16 +241,21 @@ export class QuotaPoller extends EventEmitter {
                         remaining = Math.round(Number(m.remainingPercentage) * 100);
                     } else if (m.remaining_fraction !== undefined) {
                         remaining = Math.round(Number(m.remaining_fraction) * 100);
+                    } else if (quotaInfo.remainingFraction !== undefined) {
+                        // Handle nested quotaInfo.remainingFraction
+                        remaining = Math.round(Number(quotaInfo.remainingFraction) * 100);
                     }
 
                     if (m.limit !== undefined) limit = Number(m.limit);
                     else if (m.total !== undefined) limit = Number(m.total);
+                    // If no explicit limit, we assume 100 for percentage-based
 
                     let resetAt: Date | undefined = undefined;
                     if (m.reset_at) resetAt = new Date(m.reset_at);
                     else if (m.resetAt) resetAt = new Date(m.resetAt);
                     else if (m.reset_time) resetAt = new Date(m.reset_time);
                     else if (m.resetTime) resetAt = new Date(m.resetTime);
+                    else if (quotaInfo.resetTime) resetAt = new Date(quotaInfo.resetTime);
 
                     if (modelId) {
                         models.push({
