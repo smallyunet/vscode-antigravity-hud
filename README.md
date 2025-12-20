@@ -1,10 +1,15 @@
 # Antigravity HUD
 
+<div align="center">
+  <img src="images/logo.png" alt="Antigravity HUD Logo" width="128" />
+</div>
+
+
 [![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/smallyu.vscode-antigravity-hud?label=VS%20Marketplace&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=smallyu.vscode-antigravity-hud)
 [![Open VSX](https://img.shields.io/open-vsx/v/smallyu/vscode-antigravity-hud?label=Open%20VSX&logo=eclipse)](https://open-vsx.org/extension/smallyu/vscode-antigravity-hud)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/smallyu.vscode-antigravity-hud?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=smallyu.vscode-antigravity-hud)
 
-**Seamlessly monitor your Google Antigravity AI IDE model usage directly from VS Code.**
+**Seamlessly monitor your Google Antigravity AI IDE model usage directly within the IDE.**
 
 Antigravity HUD automatically detects your local Antigravity instance and displays real-time quota information in your status bar, keeping you informed without breaking your flow.
 
@@ -27,8 +32,8 @@ Antigravity HUD automatically detects your local Antigravity instance and displa
 3. Click **Install**.
 
 **From Marketplace:**
+- [Open VSX Registry](https://open-vsx.org/extension/smallyu/vscode-antigravity-hud) (Recommended for Antigravity)
 - [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=smallyu.vscode-antigravity-hud)
-- [Open VSX Registry](https://open-vsx.org/extension/smallyu/vscode-antigravity-hud)
 
 ## Status Bar Indicators
 
@@ -36,11 +41,11 @@ The status bar icon provides a quick visual health check of your quota:
 
 | Icon | Meaning | Description |
 |------|---------|-------------|
-| `$(check) AG: 85%` | **Healthy** | Plenty of quota remaining (>50%). |
-| `$(info) AG: 35%` | **Moderate** | Quota is being used (20-50%). |
-| `$(warning) AG: 15%` | **Low** | Critical quota level (<20%). Time to be careful. |
-| `$(circle-slash) AG: --` | **Disconnected** | Could not find a running Antigravity instance. |
-| `$(sync~spin) AG: ...` | **Connecting** | Searching for processes or fetching initial data. |
+| `✅ AG: 85%` | **Healthy** | Plenty of quota remaining (>50%). |
+| `ℹ️ AG: 35%` | **Moderate** | Quota is being used (20-50%). |
+| `⚠️ AG: 15%` | **Low** | Critical quota level (<20%). Time to be careful. |
+| `🚫 AG: --` | **Disconnected** | Could not find a running Antigravity instance. |
+| `🔄 AG: ...` | **Connecting** | Searching for processes or fetching initial data. |
 
 ## Configuration
 

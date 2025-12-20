@@ -14,10 +14,17 @@ export class StatusBarManager {
     private lowQuotaThreshold: number;
     private enableNotifications: boolean;
     private hasNotifiedLowQuota: Set<string> = new Set();
+    private context: vscode.ExtensionContext;
+    private selectedModelId: string | null = null;
+    private static readonly KEY_SELECTED_MODEL = 'antigravity-hud.selectedModelId';
 
-    constructor(lowQuotaThreshold: number = 20, enableNotifications: boolean = true) {
+    constructor(context: vscode.ExtensionContext, lowQuotaThreshold: number = 20, enableNotifications: boolean = true) {
+        this.context = context;
         this.lowQuotaThreshold = lowQuotaThreshold;
         this.enableNotifications = enableNotifications;
+
+        // Restore selected model
+        this.selectedModelId = this.context.globalState.get<string | null>(StatusBarManager.KEY_SELECTED_MODEL, null);
 
         // Create status bar item on the right side, with moderate priority
         this.statusBarItem = vscode.window.createStatusBarItem(
@@ -47,6 +54,59 @@ export class StatusBarManager {
             logger.debug('Status bar updated with new quota data');
         }
         this.updateDisplay();
+    }
+
+    /**
+     * Show model selection QuickPick
+     */
+    async selectModel(): Promise<void> {
+        if (!this.currentQuota || this.currentQuota.models.length === 0) {
+            vscode.window.showInformationMessage('Antigravity HUD: No models available to select. Please wait for connection.');
+            return;
+        }
+
+        const AUTO_ITEM: vscode.QuickPickItem = {
+            label: '$(list-unordered) Auto (Lowest Quota)',
+            description: 'Show minimal quota across all models',
+            detail: this.selectedModelId === null ? 'Currently Selected' : undefined
+        };
+
+        const modelItems: vscode.QuickPickItem[] = this.currentQuota.models.map(m => ({
+            label: `$(${m.modelId === this.selectedModelId ? 'verified' : 'server'}) ${m.modelName}`,
+            description: `${this.formatPercentage(m)}% remaining`,
+            detail: m.modelId === this.selectedModelId ? 'Currently Selected' : undefined,
+            id: m.modelId // Store ID for retrieval
+        }));
+
+        const selected = await vscode.window.showQuickPick([AUTO_ITEM, ...modelItems], {
+            title: 'Antigravity HUD - Select Model to Monitor',
+            placeHolder: 'Select a model to show in Status Bar'
+        });
+
+        if (selected) {
+            if (selected === AUTO_ITEM) {
+                this.selectedModelId = null;
+                logger.info('Model selection cleared (Auto)');
+            } else {
+                const selectedModel = this.currentQuota.models.find(m =>
+                    selected.label.includes(m.modelName)
+                );
+                if (selectedModel) {
+                    this.selectedModelId = selectedModel.modelId;
+                    logger.info(`Model selected: ${selectedModel.modelName} (${selectedModel.modelId})`);
+                }
+            }
+
+            // Persist selection
+            await this.context.globalState.update(StatusBarManager.KEY_SELECTED_MODEL, this.selectedModelId);
+
+            // Update display
+            this.updateDisplay();
+        }
+    }
+
+    private formatPercentage(model: ModelQuota): number {
+        return model.limit > 0 ? Math.round((model.remaining / model.limit) * 100) : 0;
     }
 
     /**
@@ -123,17 +183,24 @@ export class StatusBarManager {
     }
 
     /**
-     * Calculate overall quota percentage
+     * Calculate overall percentage
      */
     private calculateOverallPercentage(): number {
         if (!this.currentQuota || this.currentQuota.models.length === 0) {
             return 0;
         }
 
+        // If a model is selected, use that
+        if (this.selectedModelId) {
+            const selectedModel = this.currentQuota.models.find(m => m.modelId === this.selectedModelId);
+            if (selectedModel) {
+                return this.formatPercentage(selectedModel);
+            }
+            // Fallback: if selected model not found (e.g. config changed), return lowest or 0
+        }
+
         // Use minimum percentage across all models (most restrictive)
-        const percentages = this.currentQuota.models.map(m =>
-            m.limit > 0 ? Math.round((m.remaining / m.limit) * 100) : 0
-        );
+        const percentages = this.currentQuota.models.map(m => this.formatPercentage(m));
 
         return Math.min(...percentages);
     }
@@ -166,7 +233,7 @@ export class StatusBarManager {
         } else if (percentage <= 50) {
             return '$(info)';
         }
-        return '$(check)';
+        return '$(verified)';
     }
 
     /**
@@ -208,7 +275,15 @@ export class StatusBarManager {
 
         // Footer info
         const lowest = this.calculateOverallPercentage();
-        md.appendMarkdown(`$(info) **Status Bar displays:** Lowest quota across all models (${lowest}%)\n\n`);
+        if (this.selectedModelId) {
+            const selectedModel = this.currentQuota.models.find(m => m.modelId === this.selectedModelId);
+            if (selectedModel) {
+                md.appendMarkdown(`$(verified) **Monitored Model:** ${selectedModel.modelName} (${lowest}%)\n\n`);
+            }
+        } else {
+            md.appendMarkdown(`$(info) **Status Bar displays:** Lowest quota across all models (${lowest}%)\n\n`);
+        }
+
         md.appendMarkdown(`$(clock) **Last updated:** ${this.formatTime(this.currentQuota.lastUpdated)}`);
 
         return md;
@@ -255,11 +330,13 @@ export class StatusBarManager {
             return;
         }
 
-        const items: vscode.QuickPickItem[] = this.currentQuota.models.map(model => ({
+        const modelItems: vscode.QuickPickItem[] = this.currentQuota.models.map(model => ({
             label: `$(${this.getQuickPickIcon(model)}) ${model.modelName}`,
             description: `${model.remaining}/${model.limit}`,
-            detail: this.getModelDetail(model)
+            detail: this.getModelDetail(model) + (model.modelId === this.selectedModelId ? ' • $(verified) Monitored' : '')
         }));
+
+        const items: vscode.QuickPickItem[] = [...modelItems];
 
         // Add separator and info items
         items.push({ label: '', kind: vscode.QuickPickItemKind.Separator });
@@ -271,6 +348,10 @@ export class StatusBarManager {
             label: '$(refresh) Refresh Now',
             description: 'Fetch latest quota data'
         });
+        items.push({
+            label: '$(settings) Select Monitored Model',
+            description: 'Choose which model to show in Status Bar'
+        });
 
         const selected = await vscode.window.showQuickPick(items, {
             title: 'Antigravity HUD - Model Quotas',
@@ -279,6 +360,8 @@ export class StatusBarManager {
 
         if (selected?.label === '$(refresh) Refresh Now') {
             vscode.commands.executeCommand('antigravity-hud.refresh');
+        } else if (selected?.label === '$(settings) Select Monitored Model') {
+            this.selectModel();
         }
     }
 

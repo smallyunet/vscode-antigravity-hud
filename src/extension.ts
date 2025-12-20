@@ -22,7 +22,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Initialize components
     processHunter = new ProcessHunter(config.processPatterns);
     quotaPoller = new QuotaPoller(config.pollingInterval, config.apiPath);
-    statusBarManager = new StatusBarManager(config.lowQuotaThreshold, config.enableNotifications);
+    statusBarManager = new StatusBarManager(context, config.lowQuotaThreshold, config.enableNotifications);
 
     // Wire up quota updates to status bar
     quotaPoller.on('update', (event: QuotaUpdateEvent) => {
@@ -40,6 +40,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         () => refreshConnection()
     );
 
+    const selectModelCmd = vscode.commands.registerCommand(
+        'antigravity-hud.selectModel',
+        () => statusBarManager.selectModel()
+    );
+
     // Listen for configuration changes
     const configWatcher = vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('antigravity-hud')) {
@@ -51,6 +56,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         showQuotaCmd,
         refreshCmd,
+        selectModelCmd,
         configWatcher,
         { dispose: () => cleanup() }
     );
