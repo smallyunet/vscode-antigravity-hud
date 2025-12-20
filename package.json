@@ -3,7 +3,11 @@
   "displayName": "Antigravity HUD",
   "description": "Lightweight monitoring for Google Antigravity AI IDE model usage quota",
   "version": "0.0.1",
-  "publisher": "antigravity-hud",
+  "publisher": "smallyu",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smallyunet/vscode-antigravity-hud"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },

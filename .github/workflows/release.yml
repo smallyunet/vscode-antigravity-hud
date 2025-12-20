@@ -43,7 +43,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Optional: Publish to VS Code Marketplace
-      # Requires VSCE_PAT secret to be set
-      # - name: Publish to Marketplace
-      #   run: vsce publish -p ${{ secrets.VSCE_PAT }}
+      # Publish to VS Code Marketplace
+      # Requires VSCE_PAT secret to be set in repository settings
+      - name: Publish to Marketplace
+        run: vsce publish -p ${{ secrets.VSCE_PAT }}
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
