@@ -9,9 +9,9 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build:
+    name: Build & Package
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,11 +34,27 @@ jobs:
       - name: Package Extension
         run: vsce package
 
-      - name: Get version from tag
-        id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-vsix
+          path: '*.vsix'
+          retention-days: 1
 
-      - name: Create GitHub Release
+  gh-release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: extension-vsix
+
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: '*.vsix'
@@ -46,19 +62,44 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Publish to VS Code Marketplace
-      # Requires VSCE_PAT secret to be set in repository settings
-      - name: Publish to VS Code Marketplace
-        run: vsce publish -p ${{ secrets.VSCE_PAT }}
+  publish-vscode:
+    name: Publish to VS Code Marketplace
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: extension-vsix
+
+      - name: Install vsce
+        run: npm install -g @vscode/vsce
+
+      - name: Publish
+        run: vsce publish -p ${{ secrets.VSCE_PAT }} --packagePath *.vsix
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
-      # Publish to Open VSX Registry (for Antigravity IDE and other VS Code forks)
-      # Requires OVSX_PAT secret to be set in repository settings
+  publish-ovsx:
+    name: Publish to Open VSX Registry
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: extension-vsix
+
       - name: Install ovsx
         run: npm install -g ovsx
 
-      - name: Publish to Open VSX
+      - name: Publish
         run: ovsx publish *.vsix -p ${{ secrets.OVSX_PAT }}
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
