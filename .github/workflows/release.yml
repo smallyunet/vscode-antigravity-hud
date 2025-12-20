@@ -48,7 +48,17 @@ jobs:
 
       # Publish to VS Code Marketplace
       # Requires VSCE_PAT secret to be set in repository settings
-      - name: Publish to Marketplace
+      - name: Publish to VS Code Marketplace
         run: vsce publish -p ${{ secrets.VSCE_PAT }}
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      # Publish to Open VSX Registry (for Antigravity IDE and other VS Code forks)
+      # Requires OVSX_PAT secret to be set in repository settings
+      - name: Install ovsx
+        run: npm install -g ovsx
+
+      - name: Publish to Open VSX
+        run: ovsx publish *.vsix -p ${{ secrets.OVSX_PAT }}
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
