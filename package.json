@@ -46,6 +46,23 @@
             "gemini-code"
           ],
           "description": "Process name patterns to search for"
+        },
+        "antigravity-hud.apiPath": {
+          "type": "string",
+          "default": "/api/v1/quota",
+          "description": "API path for quota information"
+        },
+        "antigravity-hud.lowQuotaThreshold": {
+          "type": "number",
+          "default": 20,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Percentage threshold for low quota warnings"
+        },
+        "antigravity-hud.enableNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable low quota notifications"
         }
       }
     }

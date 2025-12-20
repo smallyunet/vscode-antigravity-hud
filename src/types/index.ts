@@ -53,4 +53,7 @@ export interface QuotaUpdateEvent {
 export interface ExtensionConfig {
     pollingInterval: number;
     processPatterns: string[];
+    apiPath: string;
+    lowQuotaThreshold: number;
+    enableNotifications: boolean;
 }

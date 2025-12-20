@@ -21,8 +21,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // Initialize components
     processHunter = new ProcessHunter(config.processPatterns);
-    quotaPoller = new QuotaPoller(config.pollingInterval);
-    statusBarManager = new StatusBarManager();
+    quotaPoller = new QuotaPoller(config.pollingInterval, config.apiPath);
+    statusBarManager = new StatusBarManager(config.lowQuotaThreshold, config.enableNotifications);
 
     // Wire up quota updates to status bar
     quotaPoller.on('update', (event: QuotaUpdateEvent) => {
@@ -68,7 +68,10 @@ function getConfiguration(): ExtensionConfig {
     const config = vscode.workspace.getConfiguration('antigravity-hud');
     return {
         pollingInterval: config.get<number>('pollingInterval', 60),
-        processPatterns: config.get<string[]>('processPatterns', ['antigravity', 'gemini-ls', 'gemini-code'])
+        processPatterns: config.get<string[]>('processPatterns', ['antigravity', 'gemini-ls', 'gemini-code']),
+        apiPath: config.get<string>('apiPath', '/api/v1/quota'),
+        lowQuotaThreshold: config.get<number>('lowQuotaThreshold', 20),
+        enableNotifications: config.get<boolean>('enableNotifications', true)
     };
 }
 
@@ -81,6 +84,8 @@ function handleConfigurationChange(): void {
     logger.info('Configuration changed, updating...');
     processHunter.setProcessPatterns(config.processPatterns);
     quotaPoller.setPollingInterval(config.pollingInterval);
+    quotaPoller.setApiPath(config.apiPath);
+    statusBarManager.updateConfig(config.lowQuotaThreshold, config.enableNotifications);
 }
 
 /**

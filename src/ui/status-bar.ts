@@ -11,8 +11,14 @@ export class StatusBarManager {
     private statusBarItem: vscode.StatusBarItem;
     private currentQuota: QuotaResponse | null = null;
     private connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error' = 'disconnected';
+    private lowQuotaThreshold: number;
+    private enableNotifications: boolean;
+    private hasNotifiedLowQuota: Set<string> = new Set();
 
-    constructor() {
+    constructor(lowQuotaThreshold: number = 20, enableNotifications: boolean = true) {
+        this.lowQuotaThreshold = lowQuotaThreshold;
+        this.enableNotifications = enableNotifications;
+
         // Create status bar item on the right side, with moderate priority
         this.statusBarItem = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
@@ -23,7 +29,7 @@ export class StatusBarManager {
         this.updateDisplay();
         this.statusBarItem.show();
 
-        logger.info('StatusBarManager initialized');
+        logger.info(`StatusBarManager initialized (threshold: ${lowQuotaThreshold}%, notifications: ${enableNotifications})`);
     }
 
     /**
@@ -37,6 +43,7 @@ export class StatusBarManager {
         } else if (event.quota) {
             this.connectionStatus = 'connected';
             this.currentQuota = event.quota;
+            this.checkLowQuota(event.quota);
             logger.debug('Status bar updated with new quota data');
         }
         this.updateDisplay();
@@ -287,6 +294,63 @@ export class StatusBarManager {
      */
     getCurrentQuota(): QuotaResponse | null {
         return this.currentQuota;
+    }
+
+    /**
+     * Update configuration
+     */
+    updateConfig(lowQuotaThreshold: number, enableNotifications: boolean): void {
+        this.lowQuotaThreshold = lowQuotaThreshold;
+        this.enableNotifications = enableNotifications;
+
+        // Reset notification state if threshold changes or notifications are re-enabled
+        this.hasNotifiedLowQuota.clear();
+
+        // Re-check quota with new settings
+        if (this.currentQuota) {
+            this.checkLowQuota(this.currentQuota);
+        }
+
+        this.updateDisplay();
+        logger.info(`StatusBarManager config updated (threshold: ${lowQuotaThreshold}%, notifications: ${enableNotifications})`);
+    }
+
+    /**
+     * Check for low quota and notify user
+     */
+    private checkLowQuota(quota: QuotaResponse): void {
+        if (!this.enableNotifications) {
+            return;
+        }
+
+        for (const model of quota.models) {
+            if (model.limit <= 0) continue;
+
+            const percentage = Math.round((model.remaining / model.limit) * 100);
+
+            if (percentage <= this.lowQuotaThreshold) {
+                // Only notify if we haven't already notified for this model at this session
+                // We use a simple ID check. A more robust system might track if quota goes back UP.
+                if (!this.hasNotifiedLowQuota.has(model.modelId)) {
+                    vscode.window.showWarningMessage(
+                        `Antigravity Warning: ${model.modelName} is low on quota (${percentage}% remaining).`,
+                        'Show Details'
+                    ).then(selection => {
+                        if (selection === 'Show Details') {
+                            this.showQuotaDetails();
+                        }
+                    });
+
+                    this.hasNotifiedLowQuota.add(model.modelId);
+                    logger.info(`Low quota notification sent for ${model.modelName} (${percentage}%)`);
+                }
+            } else {
+                // If quota is back above threshold, reset notification state so we can notify again if it drops
+                if (this.hasNotifiedLowQuota.has(model.modelId)) {
+                    this.hasNotifiedLowQuota.delete(model.modelId);
+                }
+            }
+        }
     }
 
     /**

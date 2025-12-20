@@ -15,13 +15,13 @@ export class QuotaPoller extends EventEmitter {
     private isPolling: boolean = false;
     private lastQuota: QuotaResponse | null = null;
 
-    // API endpoint path (placeholder - adjust based on actual API)
-    private static readonly API_PATH = '/api/v1/quota';
+    private apiPath: string;
 
-    constructor(pollingIntervalSeconds: number = 60) {
+    constructor(pollingIntervalSeconds: number = 60, apiPath: string = '/api/v1/quota') {
         super();
         this.pollingInterval = pollingIntervalSeconds * 1000;
-        logger.info(`QuotaPoller initialized with ${pollingIntervalSeconds}s interval`);
+        this.apiPath = apiPath;
+        logger.info(`QuotaPoller initialized with ${pollingIntervalSeconds}s interval, path: ${apiPath}`);
     }
 
     /**
@@ -84,7 +84,7 @@ export class QuotaPoller extends EventEmitter {
         }
 
         try {
-            const url = `http://127.0.0.1:${this.connection.port}${QuotaPoller.API_PATH}`;
+            const url = `http://127.0.0.1:${this.connection.port}${this.apiPath}`;
             logger.debug(`Polling: ${url}`);
 
             const response = await this.fetchWithTimeout(url, {
@@ -207,6 +207,14 @@ export class QuotaPoller extends EventEmitter {
             this.stop();
             this.start();
         }
+    }
+
+    /**
+     * Update API Path
+     */
+    setApiPath(path: string): void {
+        this.apiPath = path;
+        logger.info(`API path updated to ${path}`);
     }
 
     /**
