@@ -1,0 +1,299 @@
+import * as vscode from 'vscode';
+import { QuotaResponse, ModelQuota, QuotaUpdateEvent } from '../types';
+import { logger } from '../utils/logger';
+
+/**
+ * StatusBarManager - Manages the VS Code status bar item for quota display
+ * 
+ * Shows a minimal "AG: XX%" indicator that expands to full details on click.
+ */
+export class StatusBarManager {
+    private statusBarItem: vscode.StatusBarItem;
+    private currentQuota: QuotaResponse | null = null;
+    private connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error' = 'disconnected';
+
+    constructor() {
+        // Create status bar item on the right side, with moderate priority
+        this.statusBarItem = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            100
+        );
+
+        this.statusBarItem.command = 'antigravity-hud.showQuota';
+        this.updateDisplay();
+        this.statusBarItem.show();
+
+        logger.info('StatusBarManager initialized');
+    }
+
+    /**
+     * Update the status bar with new quota data
+     */
+    update(event: QuotaUpdateEvent): void {
+        if (event.error) {
+            this.connectionStatus = 'error';
+            this.currentQuota = null;
+            logger.debug('Status bar updated with error state');
+        } else if (event.quota) {
+            this.connectionStatus = 'connected';
+            this.currentQuota = event.quota;
+            logger.debug('Status bar updated with new quota data');
+        }
+        this.updateDisplay();
+    }
+
+    /**
+     * Set connection status
+     */
+    setConnectionStatus(status: 'disconnected' | 'connecting' | 'connected' | 'error'): void {
+        this.connectionStatus = status;
+        this.updateDisplay();
+    }
+
+    /**
+     * Update the visual display of the status bar item
+     */
+    private updateDisplay(): void {
+        const { text, tooltip, color } = this.formatDisplay();
+        this.statusBarItem.text = text;
+        this.statusBarItem.tooltip = tooltip;
+        this.statusBarItem.color = color;
+    }
+
+    /**
+     * Format the display text, tooltip, and color based on current state
+     */
+    private formatDisplay(): { text: string; tooltip: string; color: string | vscode.ThemeColor | undefined } {
+        switch (this.connectionStatus) {
+            case 'disconnected':
+                return {
+                    text: '$(circle-slash) AG: --',
+                    tooltip: 'Antigravity HUD: Not connected. Click to retry.',
+                    color: undefined
+                };
+
+            case 'connecting':
+                return {
+                    text: '$(sync~spin) AG: ...',
+                    tooltip: 'Antigravity HUD: Connecting...',
+                    color: undefined
+                };
+
+            case 'error':
+                return {
+                    text: '$(warning) AG: ERR',
+                    tooltip: 'Antigravity HUD: Connection error. Click for details.',
+                    color: new vscode.ThemeColor('statusBarItem.errorForeground')
+                };
+
+            case 'connected':
+                if (!this.currentQuota || this.currentQuota.models.length === 0) {
+                    return {
+                        text: '$(check) AG: OK',
+                        tooltip: 'Antigravity HUD: Connected (no quota data)',
+                        color: undefined
+                    };
+                }
+
+                // Calculate overall percentage from primary model or average
+                const percentage = this.calculateOverallPercentage();
+                const color = this.getColorForPercentage(percentage);
+                const icon = this.getIconForPercentage(percentage);
+
+                return {
+                    text: `${icon} AG: ${percentage}%`,
+                    tooltip: this.formatTooltip(),
+                    color
+                };
+        }
+    }
+
+    /**
+     * Calculate overall quota percentage
+     */
+    private calculateOverallPercentage(): number {
+        if (!this.currentQuota || this.currentQuota.models.length === 0) {
+            return 0;
+        }
+
+        // Use minimum percentage across all models (most restrictive)
+        const percentages = this.currentQuota.models.map(m =>
+            m.limit > 0 ? Math.round((m.remaining / m.limit) * 100) : 0
+        );
+
+        return Math.min(...percentages);
+    }
+
+    /**
+     * Get color based on percentage
+     */
+    private getColorForPercentage(percentage: number): string | vscode.ThemeColor | undefined {
+        if (percentage <= 20) {
+            return new vscode.ThemeColor('statusBarItem.errorForeground');
+        } else if (percentage <= 50) {
+            return new vscode.ThemeColor('statusBarItem.warningForeground');
+        }
+        return undefined; // Default color for good status
+    }
+
+    /**
+     * Get icon based on percentage
+     */
+    private getIconForPercentage(percentage: number): string {
+        if (percentage <= 20) {
+            return '$(warning)';
+        } else if (percentage <= 50) {
+            return '$(info)';
+        }
+        return '$(check)';
+    }
+
+    /**
+     * Format detailed tooltip text
+     */
+    private formatTooltip(): string {
+        if (!this.currentQuota) {
+            return 'Antigravity HUD: No data';
+        }
+
+        const lines = ['Antigravity HUD - Model Quotas', ''];
+
+        for (const model of this.currentQuota.models) {
+            const percent = model.limit > 0
+                ? Math.round((model.remaining / model.limit) * 100)
+                : 0;
+            const bar = this.createProgressBar(percent);
+            lines.push(`${model.modelName}: ${bar} ${model.remaining}/${model.limit} (${percent}%)`);
+
+            if (model.resetAt) {
+                lines.push(`  Resets: ${this.formatResetTime(model.resetAt)}`);
+            }
+        }
+
+        lines.push('');
+        lines.push(`Last updated: ${this.formatTime(this.currentQuota.lastUpdated)}`);
+        lines.push('Click for more details');
+
+        return lines.join('\n');
+    }
+
+    /**
+     * Create a simple ASCII progress bar
+     */
+    private createProgressBar(percentage: number): string {
+        const filled = Math.round(percentage / 10);
+        const empty = 10 - filled;
+        return '[' + '█'.repeat(filled) + '░'.repeat(empty) + ']';
+    }
+
+    /**
+     * Format reset time relative to now
+     */
+    private formatResetTime(date: Date): string {
+        const now = new Date();
+        const diff = date.getTime() - now.getTime();
+
+        if (diff <= 0) {
+            return 'now';
+        }
+
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+        if (hours > 0) {
+            return `${hours}h ${minutes}m`;
+        }
+        return `${minutes}m`;
+    }
+
+    /**
+     * Format time for display
+     */
+    private formatTime(date: Date): string {
+        return date.toLocaleTimeString();
+    }
+
+    /**
+     * Show detailed quota information in a QuickPick
+     */
+    async showQuotaDetails(): Promise<void> {
+        if (!this.currentQuota || this.currentQuota.models.length === 0) {
+            vscode.window.showInformationMessage(
+                'Antigravity HUD: No quota data available. ' +
+                (this.connectionStatus === 'disconnected'
+                    ? 'Not connected to Antigravity process.'
+                    : 'Waiting for data...')
+            );
+            return;
+        }
+
+        const items: vscode.QuickPickItem[] = this.currentQuota.models.map(model => ({
+            label: `$(${this.getQuickPickIcon(model)}) ${model.modelName}`,
+            description: `${model.remaining}/${model.limit}`,
+            detail: this.getModelDetail(model)
+        }));
+
+        // Add separator and info items
+        items.push({ label: '', kind: vscode.QuickPickItemKind.Separator });
+        items.push({
+            label: '$(clock) Last Updated',
+            description: this.formatTime(this.currentQuota.lastUpdated)
+        });
+        items.push({
+            label: '$(refresh) Refresh Now',
+            description: 'Fetch latest quota data'
+        });
+
+        const selected = await vscode.window.showQuickPick(items, {
+            title: 'Antigravity HUD - Model Quotas',
+            placeHolder: 'Select an item for more info'
+        });
+
+        if (selected?.label === '$(refresh) Refresh Now') {
+            vscode.commands.executeCommand('antigravity-hud.refresh');
+        }
+    }
+
+    /**
+     * Get icon for QuickPick based on model quota
+     */
+    private getQuickPickIcon(model: ModelQuota): string {
+        const percent = model.limit > 0
+            ? Math.round((model.remaining / model.limit) * 100)
+            : 0;
+
+        if (percent <= 20) return 'error';
+        if (percent <= 50) return 'warning';
+        return 'pass';
+    }
+
+    /**
+     * Get detail string for model in QuickPick
+     */
+    private getModelDetail(model: ModelQuota): string {
+        const percent = model.limit > 0
+            ? Math.round((model.remaining / model.limit) * 100)
+            : 0;
+
+        let detail = `${percent}% remaining`;
+        if (model.resetAt) {
+            detail += ` • Resets in ${this.formatResetTime(model.resetAt)}`;
+        }
+        return detail;
+    }
+
+    /**
+     * Get current quota data
+     */
+    getCurrentQuota(): QuotaResponse | null {
+        return this.currentQuota;
+    }
+
+    /**
+     * Dispose of the status bar item
+     */
+    dispose(): void {
+        this.statusBarItem.dispose();
+        logger.info('StatusBarManager disposed');
+    }
+}
