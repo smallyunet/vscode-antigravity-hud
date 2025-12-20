@@ -18,7 +18,7 @@ export class QuotaPoller extends EventEmitter {
 
     private apiPath: string;
 
-    constructor(pollingIntervalSeconds: number = 60, apiPath: string = '/exa.language_server_pb.LanguageServerService/GetUnleashData') {
+    constructor(pollingIntervalSeconds: number = 60, apiPath: string = '/exa.language_server_pb.LanguageServerService/GetUserStatus') {
         super();
         this.pollingInterval = pollingIntervalSeconds * 1000;
         this.apiPath = apiPath;
@@ -161,6 +161,33 @@ export class QuotaPoller extends EventEmitter {
             // Try different paths
             if (data?.models && Array.isArray(data.models)) {
                 rawModels = data.models;
+            } else if (data?.user_status?.plan_status) {
+                // GetUserStatus structure: userStatus -> planStatus -> availablePromptCredits
+                // This seems to be a single credit system rather than per-model
+                const credits = data.user_status.plan_status.available_prompt_credits || 0;
+                return {
+                    models: [{
+                        modelId: 'credits',
+                        modelName: 'Available Credits',
+                        remaining: credits,
+                        limit: 1000, // Unknown limit, maybe just show numeric
+                        resetAt: undefined
+                    }],
+                    lastUpdated: new Date()
+                };
+            } else if (data?.userStatus?.planStatus) {
+                // CamelCase version
+                const credits = data.userStatus.planStatus.availablePromptCredits || 0;
+                return {
+                    models: [{
+                        modelId: 'credits',
+                        modelName: 'Available Credits',
+                        remaining: credits,
+                        limit: 1000,
+                        resetAt: undefined
+                    }],
+                    lastUpdated: new Date()
+                };
             } else if (data?.user_status?.cascade_model_config_data?.client_model_configs) {
                 // CamelCase might be normalized to snake_case in some proxies, checking both
                 rawModels = data.user_status.cascade_model_config_data.client_model_configs;
@@ -208,7 +235,7 @@ export class QuotaPoller extends EventEmitter {
                     }
                 }
             } else {
-                logger.warn('Could not find model data in response', JSON.stringify(data).substring(0, 500));
+                logger.warn('Could not find model data in response. Full data:', JSON.stringify(data));
             }
 
         } catch (e) {

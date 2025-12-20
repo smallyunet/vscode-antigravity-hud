@@ -61,56 +61,63 @@ export class StatusBarManager {
      * Update the visual display of the status bar item
      */
     private updateDisplay(): void {
-        const { text, tooltip, color } = this.formatDisplay();
+        const { text, tooltip, color, backgroundColor } = this.formatDisplay();
         this.statusBarItem.text = text;
         this.statusBarItem.tooltip = tooltip;
         this.statusBarItem.color = color;
+        this.statusBarItem.backgroundColor = backgroundColor;
     }
 
     /**
      * Format the display text, tooltip, and color based on current state
      */
-    private formatDisplay(): { text: string; tooltip: string; color: string | vscode.ThemeColor | undefined } {
+    private formatDisplay(): { text: string; tooltip: string; color: string | vscode.ThemeColor | undefined; backgroundColor: vscode.ThemeColor | undefined } {
         switch (this.connectionStatus) {
             case 'disconnected':
                 return {
                     text: '$(circle-slash) AG: --',
                     tooltip: 'Antigravity HUD: Not connected. Click to retry.',
-                    color: undefined
+                    color: undefined,
+                    backgroundColor: undefined
                 };
 
             case 'connecting':
                 return {
                     text: '$(sync~spin) AG: ...',
                     tooltip: 'Antigravity HUD: Connecting...',
-                    color: undefined
+                    color: undefined,
+                    backgroundColor: undefined
                 };
 
             case 'error':
                 return {
                     text: '$(warning) AG: ERR',
                     tooltip: 'Antigravity HUD: Connection error. Click for details.',
-                    color: new vscode.ThemeColor('statusBarItem.errorForeground')
+                    color: new vscode.ThemeColor('statusBarItem.errorForeground'),
+                    backgroundColor: new vscode.ThemeColor('statusBarItem.errorBackground')
                 };
 
             case 'connected':
                 if (!this.currentQuota || this.currentQuota.models.length === 0) {
                     return {
-                        text: '$(check) AG: OK',
-                        tooltip: 'Antigravity HUD: Connected (no quota data)',
-                        color: undefined
+                        text: '$(alert) AG: ???',
+                        tooltip: 'Antigravity HUD: Connected (Data Unavailable)',
+                        color: undefined,
+                        backgroundColor: new vscode.ThemeColor('statusBarItem.warningBackground')
                     };
                 }
 
                 // Calculate overall percentage from primary model or average
                 const percentage = this.calculateOverallPercentage();
                 const color = this.getColorForPercentage(percentage);
+                const backgroundColor = this.getBackgroundColorForPercentage(percentage);
                 const icon = this.getIconForPercentage(percentage);
 
                 return {
                     text: `${icon} AG: ${percentage}%`,
                     tooltip: this.formatTooltip(),
-                    color
+                    color,
+                    backgroundColor
                 };
         }
     }
@@ -135,12 +142,19 @@ export class StatusBarManager {
      * Get color based on percentage
      */
     private getColorForPercentage(percentage: number): string | vscode.ThemeColor | undefined {
+        return undefined; // Keep text color default/white when using background colors for better contrast
+    }
+
+    /**
+     * Get background color based on percentage
+     */
+    private getBackgroundColorForPercentage(percentage: number): vscode.ThemeColor | undefined {
         if (percentage <= 20) {
-            return new vscode.ThemeColor('statusBarItem.errorForeground');
+            return new vscode.ThemeColor('statusBarItem.errorBackground');
         } else if (percentage <= 50) {
-            return new vscode.ThemeColor('statusBarItem.warningForeground');
+            return new vscode.ThemeColor('statusBarItem.warningBackground');
         }
-        return undefined; // Default color for good status
+        return undefined;
     }
 
     /**
