@@ -134,6 +134,16 @@ export class QuotaPoller extends EventEmitter {
 
             const quota = this.parseQuotaResponse(data);
             this.lastQuota = quota;
+
+            // Log the quota update for user verification (requests by user)
+            if (quota.models.length > 0) {
+                const modelLog = quota.models.map(m => {
+                    const pct = m.limit > 0 ? ((m.remaining / m.limit) * 100).toFixed(2) : '0.00';
+                    return `    ${m.modelName.padEnd(30)} : ${pct}%`;
+                }).join('\n');
+                logger.info(`Quota Update:\n${modelLog}`);
+            }
+
             this.emitUpdate(quota);
 
         } catch (error) {
@@ -158,41 +168,44 @@ export class QuotaPoller extends EventEmitter {
 
             let rawModels: any[] = [];
 
-            // Try different paths
-            if (data?.models && Array.isArray(data.models)) {
-                rawModels = data.models;
-            } else if (data?.user_status?.plan_status) {
-                // GetUserStatus structure: userStatus -> planStatus -> availablePromptCredits
-                // This seems to be a single credit system rather than per-model
-                const credits = data.user_status.plan_status.available_prompt_credits || 0;
-                return {
-                    models: [{
-                        modelId: 'credits',
-                        modelName: 'Available Credits',
-                        remaining: credits,
-                        limit: 1000, // Unknown limit, maybe just show numeric
-                        resetAt: undefined
-                    }],
-                    lastUpdated: new Date()
-                };
-            } else if (data?.userStatus?.planStatus) {
-                // CamelCase version
-                const credits = data.userStatus.planStatus.availablePromptCredits || 0;
-                return {
-                    models: [{
-                        modelId: 'credits',
-                        modelName: 'Available Credits',
-                        remaining: credits,
-                        limit: 1000,
-                        resetAt: undefined
-                    }],
-                    lastUpdated: new Date()
-                };
-            } else if (data?.user_status?.cascade_model_config_data?.client_model_configs) {
-                // CamelCase might be normalized to snake_case in some proxies, checking both
+            // 1. Try to find the detailed model configurations first (Priority)
+            if (data?.user_status?.cascade_model_config_data?.client_model_configs) {
                 rawModels = data.user_status.cascade_model_config_data.client_model_configs;
             } else if (data?.userStatus?.cascadeModelConfigData?.clientModelConfigs) {
                 rawModels = data.userStatus.cascadeModelConfigData.clientModelConfigs;
+            } else if (data?.models && Array.isArray(data.models)) {
+                rawModels = data.models;
+            }
+
+            // 2. If no detailed models found, check for legacy "plan_status" credits
+            // Only use this if rawModels is empty, or maybe we append it?
+            // For now, if we found nothing above, we try this.
+            if (rawModels.length === 0) {
+                if (data?.user_status?.plan_status) {
+                    const credits = data.user_status.plan_status.available_prompt_credits || 0;
+                    return {
+                        models: [{
+                            modelId: 'credits',
+                            modelName: 'Available Credits',
+                            remaining: credits,
+                            limit: 1000,
+                            resetAt: undefined
+                        }],
+                        lastUpdated: new Date()
+                    };
+                } else if (data?.userStatus?.planStatus) {
+                    const credits = data.userStatus.planStatus.availablePromptCredits || 0;
+                    return {
+                        models: [{
+                            modelId: 'credits',
+                            modelName: 'Available Credits',
+                            remaining: credits,
+                            limit: 1000,
+                            resetAt: undefined
+                        }],
+                        lastUpdated: new Date()
+                    };
+                }
             }
 
             if (rawModels.length > 0) {

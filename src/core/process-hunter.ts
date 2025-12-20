@@ -41,16 +41,15 @@ export class ProcessHunter {
 
             for (const proc of processes) {
                 if (this.matchesPattern(proc)) {
-                    logger.info(`Found candidate process: PID=${proc.pid}, Name=${proc.name}`);
-                    logger.debug(`Cmd: ${proc.commandLine}`);
+                    // Only debug log candidate finding to reduce noise
+                    logger.debug(`Found candidate process: PID=${proc.pid}, Name=${proc.name}`);
 
                     const connection = await this.extractConnection(proc);
                     if (connection) {
                         logger.info(`✅ Successfully connected to Antigravity process on port ${connection.port}`);
                         return connection;
-                    } else {
-                        logger.warn(`❌ Could not verify connection for PID ${proc.pid}`);
                     }
+                    // Silent failure for individual candidates if they don't have tokens/ports
                 }
             }
 
@@ -212,62 +211,60 @@ export class ProcessHunter {
         }
 
         if (!token) {
-            logger.debug(`No token found in process ${proc.pid}`);
+            // Very common for processes to match name but not have token (e.g. helper processes), so just debug
+            logger.debug(`No token found in candidate process ${proc.pid}`);
             return null;
         }
-
-        logger.info(`Found token for PID ${proc.pid}. Scanning for ports...`);
 
         // 2. Collect Candidate Ports
         const candidatePorts: number[] = [];
 
-        // From args
-        const portMatch = cmdLine.match(ProcessHunter.PORT_REGEX);
-        if (portMatch) candidatePorts.push(parseInt(portMatch[1], 10));
-
+        // Priority 1: Extension Server Port (often the right one for IDEs)
         const extPortMatch = cmdLine.match(ProcessHunter.EXT_PORT_REGEX);
         if (extPortMatch) candidatePorts.push(parseInt(extPortMatch[1], 10));
 
-        // From lsof (Mac/Linux)
+        // Priority 2: Standard API Port
+        const portMatch = cmdLine.match(ProcessHunter.PORT_REGEX);
+        if (portMatch) candidatePorts.push(parseInt(portMatch[1], 10));
+
+        // Priority 3: Scan lsof if needed (only if no explicit ports or on deep scan)
+        // We always scan if we have a token but no args, or just to be safe if args failed?
+        // Let's stick to adding them if arguments found nothing, or as supplements.
         if (this.platform === 'darwin' || this.platform === 'linux') {
             try {
                 const lsofPorts = await this.findPortsByPid(proc.pid);
-                logger.info(`lsof found ports for PID ${proc.pid}: ${lsofPorts.join(', ')}`);
                 lsofPorts.forEach(p => {
                     if (!candidatePorts.includes(p)) candidatePorts.push(p);
                 });
             } catch (err) {
-                logger.warn(`lsof failed for PID ${proc.pid}`, err);
+                logger.debug(`lsof failed for PID ${proc.pid}`, err);
             }
         }
 
         if (candidatePorts.length === 0) {
-            logger.warn(`No ports found (args or lsof) for PID ${proc.pid}`);
+            logger.debug(`No ports found (args or lsof) for PID ${proc.pid}`);
             return null;
         }
 
-        logger.info(`Verifying candidate ports for PID ${proc.pid}: ${candidatePorts.join(', ')}`);
+        logger.debug(`Verifying candidate ports for PID ${proc.pid}: ${candidatePorts.join(', ')}`);
 
         // Verify ports
         for (const port of candidatePorts) {
             if (port <= 0) continue;
 
-            logger.debug(`Ping check on port ${port}...`);
             const isValid = await this.verifyConnection(port, token);
             if (isValid) {
-                logger.info(`Verified connection on port ${port} details: PID=${proc.pid}`);
                 return {
                     port,
                     token,
                     csrfToken: token,
                     pid: proc.pid
                 };
-            } else {
-                logger.debug(`Ping failed on port ${port}`);
             }
         }
 
-        logger.warn(`All candidate ports failed verification for PID ${proc.pid}`);
+        // Only warn if we had a token (strong candidate) but failed all ports
+        logger.warn(`Failed to verify connection for PID ${proc.pid} (Token found, ports checked: ${candidatePorts.join(', ')})`);
         return null;
     }
 
