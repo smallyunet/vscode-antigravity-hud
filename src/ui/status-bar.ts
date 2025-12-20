@@ -175,6 +175,7 @@ export class StatusBarManager {
     private formatTooltip(): vscode.MarkdownString {
         const md = new vscode.MarkdownString();
         md.isTrusted = true;
+        md.supportThemeIcons = true;
         md.supportHtml = true;
 
         if (!this.currentQuota) {
