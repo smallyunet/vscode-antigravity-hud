@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { AntigravityConnection, QuotaResponse, ModelQuota, QuotaUpdateEvent } from '../types';
+import { AntigravityConnection, QuotaResponse, ModelQuota, QuotaUpdateEvent, ServerUserStatusResponse, ModelQuotaInfo } from '../types';
 import { logger } from '../utils/logger';
 
 /**
@@ -17,7 +17,7 @@ export class QuotaPoller extends EventEmitter {
 
     private apiPath: string;
 
-    constructor(pollingIntervalSeconds: number = 60, apiPath: string = '/api/v1/quota') {
+    constructor(pollingIntervalSeconds: number = 60, apiPath: string = '/exa.language_server_pb.LanguageServerService/GetUnleashData') {
         super();
         this.pollingInterval = pollingIntervalSeconds * 1000;
         this.apiPath = apiPath;
@@ -88,11 +88,13 @@ export class QuotaPoller extends EventEmitter {
             logger.debug(`Polling: ${url}`);
 
             const response = await this.fetchWithTimeout(url, {
-                method: 'GET',
+                method: 'POST', // Changed to POST for gRPC-web style endpoint
                 headers: {
-                    'Authorization': `Bearer ${this.connection.token}`,
-                    'Content-Type': 'application/json'
-                }
+                    'Content-Type': 'application/json',
+                    'X-Codeium-Csrf-Token': this.connection.csrfToken || this.connection.token,
+                    'Connect-Protocol-Version': '1',
+                },
+                body: JSON.stringify({ wrapper_data: {} }) // Request body needed
             }, 10000); // 10s timeout
 
             if (!response.ok) {
@@ -100,6 +102,8 @@ export class QuotaPoller extends EventEmitter {
             }
 
             const data = await response.json();
+            logger.debug('Quota API response received', { size: JSON.stringify(data).length });
+
             const quota = this.parseQuotaResponse(data);
             this.lastQuota = quota;
             this.emitUpdate(quota);
@@ -134,40 +138,82 @@ export class QuotaPoller extends EventEmitter {
 
     /**
      * Parse raw API response into QuotaResponse
-     * Adjust this based on actual API response format
      */
-    private parseQuotaResponse(data: unknown): QuotaResponse {
-        // Expected format (adjust based on actual API):
-        // {
-        //   "models": [
-        //     { "id": "gemini-3-pro", "name": "Gemini 3 Pro", "remaining": 85, "limit": 100, "resetAt": "..." },
-        //     { "id": "claude-sonnet", "name": "Claude Sonnet", "remaining": 45, "limit": 50, "resetAt": "..." }
-        //   ]
-        // }
-
+    private parseQuotaResponse(data: any): QuotaResponse {
         const models: ModelQuota[] = [];
 
-        if (data && typeof data === 'object' && 'models' in data && Array.isArray((data as { models: unknown[] }).models)) {
-            for (const model of (data as { models: unknown[] }).models) {
-                if (model && typeof model === 'object') {
-                    const m = model as Record<string, unknown>;
-                    models.push({
-                        modelId: String(m.id || m.modelId || 'unknown'),
-                        modelName: String(m.name || m.modelName || 'Unknown Model'),
-                        remaining: Number(m.remaining ?? m.left ?? 0),
-                        limit: Number(m.limit ?? m.total ?? 100),
-                        resetAt: m.resetAt ? new Date(String(m.resetAt)) : undefined
-                    });
-                }
+        try {
+            // Traverse the response structure based on common gRPC-web patterns and reference repo
+            // Expecting: data.userStatus.planStatus... or similar structure for quota
+            // Or data.models if it returns a list directly (unlikely based on reference)
+
+            // Reference repo implementation suggests it gets a list of models
+            // Let's try to find models directly or nested
+
+            let rawModels: any[] = [];
+
+            // Try different paths
+            if (data?.models && Array.isArray(data.models)) {
+                rawModels = data.models;
+            } else if (data?.user_status?.cascade_model_config_data?.client_model_configs) {
+                // CamelCase might be normalized to snake_case in some proxies, checking both
+                rawModels = data.user_status.cascade_model_config_data.client_model_configs;
+            } else if (data?.userStatus?.cascadeModelConfigData?.clientModelConfigs) {
+                rawModels = data.userStatus.cascadeModelConfigData.clientModelConfigs;
             }
+
+            if (rawModels.length > 0) {
+                for (const m of rawModels) {
+                    // Normalize fields
+                    const modelId = m.model_id || m.modelId || m.id;
+                    const modelName = m.model_name || m.modelName || m.name || m.label || modelId;
+
+                    // Quota logic: prefer explicit remaining count, else calculate from percentage
+                    let remaining = 0;
+                    let limit = 100;
+
+                    if (m.remaining !== undefined) remaining = Number(m.remaining);
+                    else if (m.left !== undefined) remaining = Number(m.left);
+                    else if (m.remaining_percentage !== undefined) {
+                        remaining = Math.round(Number(m.remaining_percentage) * 100);
+                    } else if (m.remainingPercentage !== undefined) {
+                        remaining = Math.round(Number(m.remainingPercentage) * 100);
+                    } else if (m.remaining_fraction !== undefined) {
+                        remaining = Math.round(Number(m.remaining_fraction) * 100);
+                    }
+
+                    if (m.limit !== undefined) limit = Number(m.limit);
+                    else if (m.total !== undefined) limit = Number(m.total);
+
+                    let resetAt: Date | undefined = undefined;
+                    if (m.reset_at) resetAt = new Date(m.reset_at);
+                    else if (m.resetAt) resetAt = new Date(m.resetAt);
+                    else if (m.reset_time) resetAt = new Date(m.reset_time);
+                    else if (m.resetTime) resetAt = new Date(m.resetTime);
+
+                    if (modelId) {
+                        models.push({
+                            modelId,
+                            modelName,
+                            remaining,
+                            limit,
+                            resetAt
+                        });
+                    }
+                }
+            } else {
+                logger.warn('Could not find model data in response', JSON.stringify(data).substring(0, 500));
+            }
+
+        } catch (e) {
+            logger.error('Error parsing quota response', e);
         }
 
-        // If no models found, create a placeholder
+        // If no models found, create a placeholder based on what we saw
         if (models.length === 0) {
-            logger.warn('No models found in response, using placeholder');
             models.push({
                 modelId: 'unknown',
-                modelName: 'Unknown',
+                modelName: 'Data Unavailable',
                 remaining: 0,
                 limit: 100,
                 resetAt: undefined

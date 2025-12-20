@@ -14,11 +14,40 @@ export interface ProcessInfo {
 /**
  * Antigravity connection details extracted from process arguments
  */
+/**
+ * Antigravity connection details extracted from process arguments
+ */
 export interface AntigravityConnection {
     port: number;
-    token: string;
+    token: string; // Kept for backward compatibility if needed, or alias for csrfToken
+    csrfToken: string;
     pid: number;
 }
+
+/**
+ * Model info used in GetUnleashData response
+ */
+export interface ModelQuotaInfo {
+    modelId: string;
+    modelName?: string;
+    remaining?: number; // Could be remaining or remainingPercentage
+    remainingFraction?: number;
+    limit?: number;
+    resetTime?: string; // Date string
+    resetAt?: Date;
+}
+
+/**
+ * Server User Status Response (wrapper_data)
+ */
+export interface ServerUserStatusResponse {
+    userStatus: {
+        planStatus?: {
+            availablePromptCredits: number;
+        }
+    }
+}
+
 
 /**
  * Single model quota information
