@@ -71,7 +71,7 @@ export class StatusBarManager {
     /**
      * Format the display text, tooltip, and color based on current state
      */
-    private formatDisplay(): { text: string; tooltip: string; color: string | vscode.ThemeColor | undefined; backgroundColor: vscode.ThemeColor | undefined } {
+    private formatDisplay(): { text: string; tooltip: string | vscode.MarkdownString; color: string | vscode.ThemeColor | undefined; backgroundColor: vscode.ThemeColor | undefined } {
         switch (this.connectionStatus) {
             case 'disconnected':
                 return {
@@ -170,41 +170,47 @@ export class StatusBarManager {
     }
 
     /**
-     * Format detailed tooltip text
+     * Format detailed tooltip text using Markdown
      */
-    private formatTooltip(): string {
+    private formatTooltip(): vscode.MarkdownString {
+        const md = new vscode.MarkdownString();
+        md.isTrusted = true;
+        md.supportHtml = true;
+
         if (!this.currentQuota) {
-            return 'Antigravity HUD: No data';
+            md.appendText('Antigravity HUD: No data');
+            return md;
         }
 
-        const lines = ['Antigravity HUD - Model Quotas', ''];
+        md.appendMarkdown('### Antigravity HUD Quotas\n\n');
+
+        // Table Header
+        md.appendMarkdown('| Model | Status | Remaining | Reset |\n');
+        md.appendMarkdown('| :--- | :---: | :---: | :--- |\n');
 
         for (const model of this.currentQuota.models) {
             const percent = model.limit > 0
                 ? Math.round((model.remaining / model.limit) * 100)
                 : 0;
-            const bar = this.createProgressBar(percent);
-            lines.push(`${model.modelName}: ${bar} ${model.remaining}/${model.limit} (${percent}%)`);
 
-            if (model.resetAt) {
-                lines.push(`  Resets: ${this.formatResetTime(model.resetAt)}`);
-            }
+            let statusIcon = '🟢';
+            if (percent <= 20) statusIcon = '🔴';
+            else if (percent <= 50) statusIcon = '🟡';
+
+            const remainingStr = `${model.remaining}/${model.limit} (${percent}%)`;
+            const resetStr = model.resetAt ? this.formatResetTime(model.resetAt) : '-';
+
+            md.appendMarkdown(`| **${model.modelName}** | ${statusIcon} | ${remainingStr} | ${resetStr} |\n`);
         }
 
-        lines.push('');
-        lines.push(`Last updated: ${this.formatTime(this.currentQuota.lastUpdated)}`);
-        lines.push('Click for more details');
+        md.appendMarkdown('\n---\n');
 
-        return lines.join('\n');
-    }
+        // Footer info
+        const lowest = this.calculateOverallPercentage();
+        md.appendMarkdown(`$(info) **Status Bar displays:** Lowest quota across all models (${lowest}%)\n\n`);
+        md.appendMarkdown(`$(clock) **Last updated:** ${this.formatTime(this.currentQuota.lastUpdated)}`);
 
-    /**
-     * Create a simple ASCII progress bar
-     */
-    private createProgressBar(percentage: number): string {
-        const filled = Math.round(percentage / 10);
-        const empty = 10 - filled;
-        return '[' + '█'.repeat(filled) + '░'.repeat(empty) + ']';
+        return md;
     }
 
     /**
