@@ -1,6 +1,24 @@
 # Antigravity HUD
 
+[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/smallyu.vscode-antigravity-hud?label=VS%20Marketplace&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=smallyu.vscode-antigravity-hud)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/smallyu.vscode-antigravity-hud?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=smallyu.vscode-antigravity-hud)
+
 A lightweight VS Code extension for monitoring Google Antigravity AI IDE model usage quota.
+
+## Installation
+
+**From Marketplace:**
+- [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=smallyu.vscode-antigravity-hud)
+
+**From VS Code:**
+1. Open Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`)
+2. Search for `Antigravity HUD`
+3. Click Install
+
+**From Command Line:**
+```bash
+code --install-extension smallyu.vscode-antigravity-hud
+```
 
 ## Features
 
@@ -57,4 +75,3 @@ npm run watch
 ## License
 
 MIT
-# vscode-antigravity-hud
