@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import * as https from 'https';
 import { AntigravityConnection, QuotaResponse, ModelQuota, QuotaUpdateEvent, ServerUserStatusResponse, ModelQuotaInfo } from '../types';
 import { logger } from '../utils/logger';
 
@@ -84,24 +85,51 @@ export class QuotaPoller extends EventEmitter {
         }
 
         try {
-            const url = `http://127.0.0.1:${this.connection.port}${this.apiPath}`;
-            logger.debug(`Polling: ${url}`);
-
-            const response = await this.fetchWithTimeout(url, {
-                method: 'POST', // Changed to POST for gRPC-web style endpoint
+            // Use https module directly to handle self-signed certs easily
+            const options = {
+                hostname: '127.0.0.1',
+                port: this.connection.port,
+                path: this.apiPath,
+                method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Codeium-Csrf-Token': this.connection.csrfToken || this.connection.token,
                     'Connect-Protocol-Version': '1',
                 },
-                body: JSON.stringify({ wrapper_data: {} }) // Request body needed
-            }, 10000); // 10s timeout
+                rejectUnauthorized: false,
+                timeout: 10000
+            };
 
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
+            logger.debug(`Polling quota from port ${this.connection.port}`);
 
-            const data = await response.json();
+            const data = await new Promise<any>((resolve, reject) => {
+                const req = https.request(options, (res) => {
+                    if (res.statusCode !== 200) {
+                        reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+                        return;
+                    }
+
+                    let body = '';
+                    res.on('data', chunk => body += chunk);
+                    res.on('end', () => {
+                        try {
+                            resolve(JSON.parse(body));
+                        } catch (e) {
+                            reject(e);
+                        }
+                    });
+                });
+
+                req.on('error', reject);
+                req.on('timeout', () => {
+                    req.destroy();
+                    reject(new Error('Request timed out'));
+                });
+
+                req.write(JSON.stringify({ wrapper_data: {} }));
+                req.end();
+            });
+
             logger.debug('Quota API response received', { size: JSON.stringify(data).length });
 
             const quota = this.parseQuotaResponse(data);
@@ -111,28 +139,6 @@ export class QuotaPoller extends EventEmitter {
         } catch (error) {
             logger.error('Poll failed', error);
             this.emitUpdate(null, error as Error);
-        }
-    }
-
-    /**
-     * Fetch with timeout support
-     */
-    private async fetchWithTimeout(
-        url: string,
-        options: RequestInit,
-        timeoutMs: number
-    ): Promise<Response> {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-        try {
-            const response = await fetch(url, {
-                ...options,
-                signal: controller.signal
-            });
-            return response;
-        } finally {
-            clearTimeout(timeoutId);
         }
     }
 

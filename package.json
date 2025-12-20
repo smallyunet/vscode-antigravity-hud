@@ -2,7 +2,7 @@
   "name": "vscode-antigravity-hud",
   "displayName": "Antigravity HUD",
   "description": "Lightweight monitoring for Google Antigravity AI IDE model usage quota",
-  "version": "0.0.2",
+  "version": "0.0.4",
   "publisher": "smallyu",
   "repository": {
     "type": "git",
@@ -49,7 +49,7 @@
         },
         "antigravity-hud.apiPath": {
           "type": "string",
-          "default": "/api/v1/quota",
+          "default": "/exa.language_server_pb.LanguageServerService/GetUnleashData",
           "description": "API path for quota information"
         },
         "antigravity-hud.lowQuotaThreshold": {

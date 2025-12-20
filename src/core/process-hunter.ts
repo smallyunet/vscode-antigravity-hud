@@ -1,8 +1,8 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
-import * as https from 'http'; // Use http for local connection, will check protocol later
-import { ProcessInfo, AntigravityConnection } from '../types';
+import * as https from 'https';
+import { AntigravityConnection, ProcessInfo } from '../types';
 import { logger } from '../utils/logger';
 
 const execAsync = promisify(exec);
@@ -28,7 +28,6 @@ export class ProcessHunter {
         this.processPatterns = processPatterns.map(p => p.toLowerCase());
         this.platform = os.platform();
         logger.info(`ProcessHunter initialized for platform: ${this.platform}`);
-        logger.debug(`Searching for patterns: ${this.processPatterns.join(', ')}`);
     }
 
     /**
@@ -36,23 +35,26 @@ export class ProcessHunter {
      */
     async hunt(): Promise<AntigravityConnection | null> {
         try {
-            logger.debug('Starting process hunt...');
+            logger.info('Starting process hunt...');
             const processes = await this.scanProcesses();
-            logger.debug(`Found ${processes.length} total processes`);
+            logger.info(`Found ${processes.length} total processes`);
 
             for (const proc of processes) {
                 if (this.matchesPattern(proc)) {
-                    logger.info(`Found candidate process: PID=${proc.pid}, Name=${proc.name}, Cmd=${proc.commandLine.substring(0, 100)}...`);
+                    logger.info(`Found candidate process: PID=${proc.pid}, Name=${proc.name}`);
+                    logger.debug(`Cmd: ${proc.commandLine}`);
 
                     const connection = await this.extractConnection(proc);
                     if (connection) {
-                        logger.info(`Extracted connection: port=${connection.port}`);
+                        logger.info(`✅ Successfully connected to Antigravity process on port ${connection.port}`);
                         return connection;
+                    } else {
+                        logger.warn(`❌ Could not verify connection for PID ${proc.pid}`);
                     }
                 }
             }
 
-            logger.debug('No matching Antigravity process found');
+            logger.info('No valid Antigravity connection found after checking all candidates.');
             return null;
         } catch (error) {
             logger.error('Process hunt failed', error);
@@ -80,8 +82,6 @@ export class ProcessHunter {
      * Windows process scanning using WMIC
      */
     private async scanWindowsProcesses(): Promise<ProcessInfo[]> {
-        // ... (Keep existing Windows logic for now, or update if needed. 
-        // Focusing on Unix/Mac update as per user context which is Mac)
         try {
             const { stdout } = await execAsync(
                 'wmic process get ProcessId,Name,CommandLine /format:csv',
@@ -216,51 +216,58 @@ export class ProcessHunter {
             return null;
         }
 
-        // 2. Find Port
-        // Strategy A: Look for port in arguments
-        let port = 0;
+        logger.info(`Found token for PID ${proc.pid}. Scanning for ports...`);
+
+        // 2. Collect Candidate Ports
+        const candidatePorts: number[] = [];
+
+        // From args
         const portMatch = cmdLine.match(ProcessHunter.PORT_REGEX);
-        if (portMatch) {
-            port = parseInt(portMatch[1], 10);
-        } else {
-            const extPortMatch = cmdLine.match(ProcessHunter.EXT_PORT_REGEX);
-            if (extPortMatch) {
-                port = parseInt(extPortMatch[1], 10);
+        if (portMatch) candidatePorts.push(parseInt(portMatch[1], 10));
+
+        const extPortMatch = cmdLine.match(ProcessHunter.EXT_PORT_REGEX);
+        if (extPortMatch) candidatePorts.push(parseInt(extPortMatch[1], 10));
+
+        // From lsof (Mac/Linux)
+        if (this.platform === 'darwin' || this.platform === 'linux') {
+            try {
+                const lsofPorts = await this.findPortsByPid(proc.pid);
+                logger.info(`lsof found ports for PID ${proc.pid}: ${lsofPorts.join(', ')}`);
+                lsofPorts.forEach(p => {
+                    if (!candidatePorts.includes(p)) candidatePorts.push(p);
+                });
+            } catch (err) {
+                logger.warn(`lsof failed for PID ${proc.pid}`, err);
             }
         }
 
-        // Strategy B: Use lsof/netstat if on Mac/Linux and no port in args (or if needed to verify)
-        if ((!port || port === 0) && (this.platform === 'darwin' || this.platform === 'linux')) {
-            logger.debug(`Port not found in args for PID ${proc.pid}, attempting lsof scan...`);
-            const ports = await this.findPortsByPid(proc.pid);
-            logger.debug(`Found ports via lsof for PID ${proc.pid}: ${ports.join(', ')}`);
+        if (candidatePorts.length === 0) {
+            logger.warn(`No ports found (args or lsof) for PID ${proc.pid}`);
+            return null;
+        }
 
-            // Verify each port
-            for (const p of ports) {
-                if (await this.verifyConnection(p, token)) {
-                    port = p;
-                    break;
-                }
-            }
-        } else if (port > 0) {
-            // Check if explicitly found port works
-            if (await this.verifyConnection(port, token)) {
-                // Good
+        logger.info(`Verifying candidate ports for PID ${proc.pid}: ${candidatePorts.join(', ')}`);
+
+        // Verify ports
+        for (const port of candidatePorts) {
+            if (port <= 0) continue;
+
+            logger.debug(`Ping check on port ${port}...`);
+            const isValid = await this.verifyConnection(port, token);
+            if (isValid) {
+                logger.info(`Verified connection on port ${port} details: PID=${proc.pid}`);
+                return {
+                    port,
+                    token,
+                    csrfToken: token,
+                    pid: proc.pid
+                };
             } else {
-                logger.warn(`Port ${port} found in args but failed verification.`);
-                port = 0; // Invalid
+                logger.debug(`Ping failed on port ${port}`);
             }
         }
 
-        if (port > 0 && token) {
-            return {
-                port,
-                token,
-                csrfToken: token,
-                pid: proc.pid
-            };
-        }
-
+        logger.warn(`All candidate ports failed verification for PID ${proc.pid}`);
         return null;
     }
 
@@ -274,7 +281,6 @@ export class ProcessHunter {
             if (this.platform === 'darwin') {
                 cmd = `lsof -iTCP -sTCP:LISTEN -n -P | grep -E "^\\S+\\s+${pid}\\s"`;
             } else {
-                // Linux fallback sequence could be implemented here
                 cmd = `lsof -iTCP -sTCP:LISTEN -n -P | grep -E "^\\S+\\s+${pid}\\s"`;
             }
 
@@ -295,7 +301,7 @@ export class ProcessHunter {
             }
             return ports;
         } catch (error) {
-            logger.debug(`Failed to find ports for PID ${pid} via lsof (might need permissions or different command).`);
+            // grep returns 1 if no matches, which rejects execAsync. This is normal.
             return [];
         }
     }
@@ -305,7 +311,7 @@ export class ProcessHunter {
      */
     private verifyConnection(port: number, token: string): Promise<boolean> {
         return new Promise(resolve => {
-            const options = {
+            const options: https.RequestOptions = {
                 hostname: '127.0.0.1',
                 port: port,
                 path: '/exa.language_server_pb.LanguageServerService/GetUnleashData',
@@ -315,7 +321,8 @@ export class ProcessHunter {
                     'X-Codeium-Csrf-Token': token,
                     'Connect-Protocol-Version': '1'
                 },
-                timeout: 2000
+                timeout: 2000,
+                rejectUnauthorized: false
             };
 
             const req = https.request(options, (res) => {
@@ -323,7 +330,11 @@ export class ProcessHunter {
                 resolve(res.statusCode === 200);
             });
 
-            req.on('error', () => resolve(false));
+            req.on('error', (err) => {
+                logger.debug(`Verification error on port ${port}: ${err.message}`);
+                resolve(false);
+            });
+
             req.on('timeout', () => {
                 req.destroy();
                 resolve(false);

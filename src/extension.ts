@@ -69,7 +69,7 @@ function getConfiguration(): ExtensionConfig {
     return {
         pollingInterval: config.get<number>('pollingInterval', 60),
         processPatterns: config.get<string[]>('processPatterns', ['antigravity', 'gemini-ls', 'gemini-code']),
-        apiPath: config.get<string>('apiPath', '/api/v1/quota'),
+        apiPath: config.get<string>('apiPath', '/exa.language_server_pb.LanguageServerService/GetUnleashData'),
         lowQuotaThreshold: config.get<number>('lowQuotaThreshold', 20),
         enableNotifications: config.get<boolean>('enableNotifications', true)
     };
