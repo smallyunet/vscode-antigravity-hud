@@ -6,8 +6,9 @@
 
 
 [![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/smallyu.vscode-antigravity-hud?label=VS%20Marketplace&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=smallyu.vscode-antigravity-hud)
-[![Open VSX](https://img.shields.io/open-vsx/v/smallyu/vscode-antigravity-hud?label=Open%20VSX&logo=eclipse)](https://open-vsx.org/extension/smallyu/vscode-antigravity-hud)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/smallyu.vscode-antigravity-hud?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=smallyu.vscode-antigravity-hud)
+[![Open VSX](https://img.shields.io/open-vsx/v/smallyu/vscode-antigravity-hud?label=Open%20VSX&logo=eclipse)](https://open-vsx.org/extension/smallyu/vscode-antigravity-hud)
+[![Open VSX Downloads](https://img.shields.io/open-vsx/dt/smallyu/vscode-antigravity-hud?logo=eclipse)](https://open-vsx.org/extension/smallyu/vscode-antigravity-hud)
 
 **Seamlessly monitor your Google Antigravity AI IDE model usage directly within the IDE.**
 
@@ -15,14 +16,14 @@ Antigravity HUD automatically detects your local Antigravity instance and displa
 
 ![Antigravity HUD Status Bar](images/main-ui.png)
 
+![Antigravity HUD Quota Details](images/quota-hover.png)
+
 ## Features
 
 - **Zero Configuration**: Automatically hunts for Antigravity editor and Language Server processes to find your API port and token.
 - **Real-Time Monitoring**: Polls the local API to keep your quota information up-to-date.
 - **Unobtrusive UI**: A minimal `AG: XX%` indicator sits quietly in your status bar, changing color to warn you when quotas get low.
 - **Detailed Insights**: Click the status bar item to see a breakdown of usage across all available models.
-
-![Antigravity HUD Quota Details](images/quota-hover.png)
 
 ## Installation
 
