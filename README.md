@@ -18,6 +18,8 @@ Antigravity HUD automatically detects your local Antigravity instance and displa
 
 ![Antigravity HUD Status Bar](images/main-ui-2.png)
 
+![Antigravity HUD Status Bar](images/main-ui-3.png)
+
 ![Antigravity HUD Quota Details](images/quota-hover.png)
 
 ## Features
