@@ -256,7 +256,12 @@ export class StatusBarManager {
         md.appendMarkdown('| Model | Status | Remaining | Reset |\n');
         md.appendMarkdown('| :--- | :---: | :---: | :--- |\n');
 
-        for (const model of this.currentQuota.models) {
+        // Sort models by name for consistent display
+        const sortedModels = [...this.currentQuota.models].sort((a, b) =>
+            a.modelName.localeCompare(b.modelName)
+        );
+
+        for (const model of sortedModels) {
             const percent = model.limit > 0
                 ? Math.round((model.remaining / model.limit) * 100)
                 : 0;
@@ -448,15 +453,11 @@ export class StatusBarManager {
                     this.hasNotifiedLowQuota.add(model.modelId);
                     logger.info(`Low quota notification sent for ${model.modelName} (${percentage}%)`);
                 }
-            } else {
-                // If quota is back above threshold, reset notification state so we can notify again if it drops
-                if (this.hasNotifiedLowQuota.has(model.modelId)) {
-                    this.hasNotifiedLowQuota.delete(model.modelId);
-                }
             }
         }
+        // Previous 'else' block removed: We do NOT reset the notification flag.
+        // This ensures we only notify ONCE per session per model, even if quota fluctuates.
     }
-
     /**
      * Dispose of the status bar item
      */
