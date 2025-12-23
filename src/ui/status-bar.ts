@@ -432,31 +432,44 @@ export class StatusBarManager {
             return;
         }
 
+        // Group models by percentage
+        const modelsByPercentage = new Map<number, ModelQuota[]>();
+
         for (const model of quota.models) {
             if (model.limit <= 0) continue;
 
             const percentage = Math.round((model.remaining / model.limit) * 100);
 
             if (percentage <= this.lowQuotaThreshold) {
-                // Only notify if we haven't already notified for this model at this session
-                // We use a simple ID check. A more robust system might track if quota goes back UP.
                 if (!this.hasNotifiedLowQuota.has(model.modelId)) {
-                    vscode.window.showWarningMessage(
-                        `Antigravity Warning: ${model.modelName} is low on quota (${percentage}% remaining).`,
-                        'Show Details'
-                    ).then(selection => {
-                        if (selection === 'Show Details') {
-                            this.showQuotaDetails();
-                        }
-                    });
-
-                    this.hasNotifiedLowQuota.add(model.modelId);
-                    logger.info(`Low quota notification sent for ${model.modelName} (${percentage}%)`);
+                    const group = modelsByPercentage.get(percentage) || [];
+                    group.push(model);
+                    modelsByPercentage.set(percentage, group);
                 }
             }
         }
-        // Previous 'else' block removed: We do NOT reset the notification flag.
-        // This ensures we only notify ONCE per session per model, even if quota fluctuates.
+
+        // Send notifications for each group
+        for (const [percentage, models] of modelsByPercentage) {
+            const modelNames = models.map(m => m.modelName).join(', ');
+            const isPlural = models.length > 1;
+            const message = `Antigravity Warning: ${modelNames} ${isPlural ? 'are' : 'is'} low on quota (${percentage}% remaining).`;
+
+            vscode.window.showWarningMessage(
+                message,
+                'Show Details'
+            ).then(selection => {
+                if (selection === 'Show Details') {
+                    this.showQuotaDetails();
+                }
+            });
+
+            // Mark all as notified
+            for (const model of models) {
+                this.hasNotifiedLowQuota.add(model.modelId);
+                logger.info(`Low quota notification sent for ${model.modelName} (${percentage}%)`);
+            }
+        }
     }
     /**
      * Dispose of the status bar item
