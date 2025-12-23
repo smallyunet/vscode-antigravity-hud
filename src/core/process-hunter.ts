@@ -3,7 +3,7 @@ import { promisify } from 'util';
 import * as os from 'os';
 import * as https from 'https';
 import { AntigravityConnection, ProcessInfo } from '../types';
-import { logger } from '../utils/logger';
+import { ILogger } from './interfaces';
 
 const execAsync = promisify(exec);
 
@@ -16,6 +16,7 @@ const execAsync = promisify(exec);
 export class ProcessHunter {
     private processPatterns: string[];
     private platform: NodeJS.Platform;
+    private logger: ILogger;
 
     // Regex patterns for extracting connection details
     private static readonly TOKEN_REGEX = /--csrf_token[=\s]+([a-f0-9-]+)/i; // Looking for csrf_token
@@ -24,10 +25,11 @@ export class ProcessHunter {
     private static readonly PORT_REGEX = /--api-port[=\s]+(\d+)/i;
     private static readonly EXT_PORT_REGEX = /--extension_server_port[=\s]+(\d+)/i;
 
-    constructor(processPatterns: string[] = ['antigravity', 'language_server', 'gemini-ls', 'gemini-code']) {
+    constructor(logger: ILogger, processPatterns: string[] = ['antigravity', 'language_server', 'gemini-ls', 'gemini-code']) {
         this.processPatterns = processPatterns.map(p => p.toLowerCase());
         this.platform = os.platform();
-        logger.info(`ProcessHunter initialized for platform: ${this.platform}`);
+        this.logger = logger;
+        this.logger.info(`ProcessHunter initialized for platform: ${this.platform}`);
     }
 
     /**
@@ -35,28 +37,28 @@ export class ProcessHunter {
      */
     async hunt(): Promise<AntigravityConnection | null> {
         try {
-            logger.info('Starting process hunt...');
+            this.logger.info('Starting process hunt...');
             const processes = await this.scanProcesses();
-            logger.info(`Found ${processes.length} total processes`);
+            this.logger.info(`Found ${processes.length} total processes`);
 
             for (const proc of processes) {
                 if (this.matchesPattern(proc)) {
                     // Only debug log candidate finding to reduce noise
-                    logger.debug(`Found candidate process: PID=${proc.pid}, Name=${proc.name}`);
+                    this.logger.debug(`Found candidate process: PID=${proc.pid}, Name=${proc.name}`);
 
                     const connection = await this.extractConnection(proc);
                     if (connection) {
-                        logger.info(`✅ Successfully connected to Antigravity process on port ${connection.port}`);
+                        this.logger.info(`✅ Successfully connected to Antigravity process on port ${connection.port}`);
                         return connection;
                     }
                     // Silent failure for individual candidates if they don't have tokens/ports
                 }
             }
 
-            logger.info('No valid Antigravity connection found after checking all candidates.');
+            this.logger.info('No valid Antigravity connection found after checking all candidates.');
             return null;
         } catch (error) {
-            logger.error('Process hunt failed', error);
+            this.logger.error('Process hunt failed', error);
             return null;
         }
     }
@@ -72,7 +74,7 @@ export class ProcessHunter {
             case 'linux':
                 return this.scanUnixProcesses();
             default:
-                logger.warn(`Unsupported platform: ${this.platform}, attempting Unix-style scan`);
+                this.logger.warn(`Unsupported platform: ${this.platform}, attempting Unix-style scan`);
                 return this.scanUnixProcesses();
         }
     }
@@ -108,7 +110,7 @@ export class ProcessHunter {
             }
             return processes;
         } catch (error) {
-            logger.warn('WMIC failed, trying PowerShell fallback');
+            this.logger.warn('WMIC failed, trying PowerShell fallback');
             return this.scanWindowsProcessesPowerShell();
         }
     }
@@ -141,7 +143,7 @@ export class ProcessHunter {
 
             return processes;
         } catch (error) {
-            logger.error('PowerShell process scan failed', error);
+            this.logger.error('PowerShell process scan failed', error);
             return [];
         }
     }
@@ -175,7 +177,7 @@ export class ProcessHunter {
 
             return processes;
         } catch (error) {
-            logger.error('Unix process scan failed', error);
+            this.logger.error('Unix process scan failed', error);
             return [];
         }
     }
@@ -212,7 +214,7 @@ export class ProcessHunter {
 
         if (!token) {
             // Very common for processes to match name but not have token (e.g. helper processes), so just debug
-            logger.debug(`No token found in candidate process ${proc.pid}`);
+            this.logger.debug(`No token found in candidate process ${proc.pid}`);
             return null;
         }
 
@@ -237,16 +239,16 @@ export class ProcessHunter {
                     if (!candidatePorts.includes(p)) candidatePorts.push(p);
                 });
             } catch (err) {
-                logger.debug(`lsof failed for PID ${proc.pid}`, err);
+                this.logger.debug(`lsof failed for PID ${proc.pid}`, err);
             }
         }
 
         if (candidatePorts.length === 0) {
-            logger.debug(`No ports found (args or lsof) for PID ${proc.pid}`);
+            this.logger.debug(`No ports found (args or lsof) for PID ${proc.pid}`);
             return null;
         }
 
-        logger.debug(`Verifying candidate ports for PID ${proc.pid}: ${candidatePorts.join(', ')}`);
+        this.logger.debug(`Verifying candidate ports for PID ${proc.pid}: ${candidatePorts.join(', ')}`);
 
         // Verify ports
         for (const port of candidatePorts) {
@@ -264,7 +266,7 @@ export class ProcessHunter {
         }
 
         // Only warn if we had a token (strong candidate) but failed all ports
-        logger.warn(`Failed to verify connection for PID ${proc.pid} (Token found, ports checked: ${candidatePorts.join(', ')})`);
+        this.logger.warn(`Failed to verify connection for PID ${proc.pid} (Token found, ports checked: ${candidatePorts.join(', ')})`);
         return null;
     }
 
@@ -323,12 +325,12 @@ export class ProcessHunter {
             };
 
             const req = https.request(options, (res) => {
-                logger.debug(`Verification request to port ${port} returned status ${res.statusCode}`);
+                this.logger.debug(`Verification request to port ${port} returned status ${res.statusCode}`);
                 resolve(res.statusCode === 200);
             });
 
             req.on('error', (err) => {
-                logger.debug(`Verification error on port ${port}: ${err.message}`);
+                this.logger.debug(`Verification error on port ${port}: ${err.message}`);
                 resolve(false);
             });
 

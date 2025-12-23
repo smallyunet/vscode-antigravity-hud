@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import * as https from 'https';
 import { AntigravityConnection, QuotaResponse, ModelQuota, QuotaUpdateEvent, ServerUserStatusResponse, ModelQuotaInfo } from '../types';
-import { logger } from '../utils/logger';
+import { ILogger } from './interfaces';
 import { parseQuotaResponse } from './quota-parser';
 
 /**
@@ -16,14 +16,16 @@ export class QuotaPoller extends EventEmitter {
     private timer: NodeJS.Timeout | null = null;
     private isPolling: boolean = false;
     private lastQuota: QuotaResponse | null = null;
+    private logger: ILogger;
 
     private apiPath: string;
 
-    constructor(pollingIntervalSeconds: number = 60, apiPath: string = '/exa.language_server_pb.LanguageServerService/GetUserStatus') {
+    constructor(logger: ILogger, pollingIntervalSeconds: number = 60, apiPath: string = '/exa.language_server_pb.LanguageServerService/GetUserStatus') {
         super();
+        this.logger = logger;
         this.pollingInterval = pollingIntervalSeconds * 1000;
         this.apiPath = apiPath;
-        logger.info(`QuotaPoller initialized with ${pollingIntervalSeconds}s interval, path: ${apiPath}`);
+        this.logger.info(`QuotaPoller initialized with ${pollingIntervalSeconds}s interval, path: ${apiPath}`);
     }
 
     /**
@@ -32,9 +34,9 @@ export class QuotaPoller extends EventEmitter {
     setConnection(connection: AntigravityConnection | null): void {
         this.connection = connection;
         if (connection) {
-            logger.info(`Connection set: port=${connection.port}, pid=${connection.pid}`);
+            this.logger.info(`Connection set: port=${connection.port}, pid=${connection.pid}`);
         } else {
-            logger.info('Connection cleared');
+            this.logger.info('Connection cleared');
         }
     }
 
@@ -43,17 +45,17 @@ export class QuotaPoller extends EventEmitter {
      */
     start(): void {
         if (this.isPolling) {
-            logger.debug('Already polling, ignoring start request');
+            this.logger.debug('Already polling, ignoring start request');
             return;
         }
 
         if (!this.connection) {
-            logger.warn('Cannot start polling: no connection available');
+            this.logger.warn('Cannot start polling: no connection available');
             return;
         }
 
         this.isPolling = true;
-        logger.info('Starting quota polling');
+        this.logger.info('Starting quota polling');
 
         // Initial poll
         this.poll();
@@ -73,7 +75,7 @@ export class QuotaPoller extends EventEmitter {
             this.timer = null;
         }
         this.isPolling = false;
-        logger.info('Quota polling stopped');
+        this.logger.info('Quota polling stopped');
     }
 
     /**
@@ -101,7 +103,7 @@ export class QuotaPoller extends EventEmitter {
                 timeout: 10000
             };
 
-            logger.debug(`Polling quota from port ${this.connection.port}`);
+            this.logger.debug(`Polling quota from port ${this.connection.port}`);
 
             const data = await new Promise<any>((resolve, reject) => {
                 const req = https.request(options, (res) => {
@@ -138,7 +140,7 @@ export class QuotaPoller extends EventEmitter {
                 req.end();
             });
 
-            logger.debug('Quota API response received', { size: JSON.stringify(data).length });
+            this.logger.debug('Quota API response received', { size: JSON.stringify(data).length });
 
             const quota = parseQuotaResponse(data);
             this.lastQuota = quota;
@@ -149,13 +151,13 @@ export class QuotaPoller extends EventEmitter {
                     const pct = m.limit > 0 ? ((m.remaining / m.limit) * 100).toFixed(2) : '0.00';
                     return `    ${m.modelName.padEnd(30)} : ${pct}%`;
                 }).join('\n');
-                logger.info(`Quota Update:\n${modelLog}`);
+                this.logger.info(`Quota Update:\n${modelLog}`);
             }
 
             this.emitUpdate(quota);
 
         } catch (error) {
-            logger.error('Poll failed', error);
+            this.logger.error('Poll failed', error);
             this.emitUpdate(null, error as Error);
         }
     }
@@ -184,7 +186,7 @@ export class QuotaPoller extends EventEmitter {
      */
     setPollingInterval(seconds: number): void {
         this.pollingInterval = seconds * 1000;
-        logger.info(`Polling interval updated to ${seconds}s`);
+        this.logger.info(`Polling interval updated to ${seconds}s`);
 
         // Restart polling if active
         if (this.isPolling) {
@@ -198,7 +200,7 @@ export class QuotaPoller extends EventEmitter {
      */
     setApiPath(path: string): void {
         this.apiPath = path;
-        logger.info(`API path updated to ${path}`);
+        this.logger.info(`API path updated to ${path}`);
     }
 
     /**
