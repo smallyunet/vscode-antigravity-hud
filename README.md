@@ -9,6 +9,8 @@
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/smallyu.vscode-antigravity-hud?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=smallyu.vscode-antigravity-hud)
 [![Open VSX](https://img.shields.io/open-vsx/v/smallyu/vscode-antigravity-hud?label=Open%20VSX&logo=eclipse)](https://open-vsx.org/extension/smallyu/vscode-antigravity-hud)
 [![Open VSX Downloads](https://img.shields.io/open-vsx/dt/smallyu/vscode-antigravity-hud?logo=eclipse)](https://open-vsx.org/extension/smallyu/vscode-antigravity-hud)
+[![GitHub stars](https://img.shields.io/github/stars/smallyunet/vscode-antigravity-hud?style=flat&logo=github)](https://github.com/smallyunet/vscode-antigravity-hud/stargazers)
+[![License](https://img.shields.io/github/license/smallyunet/vscode-antigravity-hud?logo=github)](https://github.com/smallyunet/vscode-antigravity-hud/blob/main/LICENSE)
 
 **Seamlessly monitor your Google Antigravity AI IDE model usage directly within the IDE.**
 
@@ -22,12 +24,13 @@ Antigravity HUD automatically detects your local Antigravity instance and displa
 
 ![Antigravity HUD Quota Details](images/quota-hover.png)
 
-## Features
+## ✨ Features
 
-- **Zero Configuration**: Automatically hunts for Antigravity editor and Language Server processes to find your API port and token.
-- **Real-Time Monitoring**: Polls the local API to keep your quota information up-to-date.
-- **Unobtrusive UI**: A minimal `AG: XX%` indicator sits quietly in your status bar, changing color to warn you when quotas get low.
-- **Detailed Insights**: Click the status bar item to see a breakdown of usage across all available models.
+- 🎯 **Zero Configuration**: Automatically hunts for Antigravity editor and Language Server processes to find your API port and token.
+- 📊 **Real-Time Monitoring**: Polls the local API to keep your quota information up-to-date.
+- 💎 **Unobtrusive UI**: A minimal `AG: XX%` indicator sits quietly in your status bar, changing color to warn you when quotas get low.
+- 🔍 **Detailed Insights**: Click the status bar item to see a breakdown of usage across all available models.
+- 🔔 **Smart Notifications**: Optional alerts when you're running low on quota.
 
 ## Installation
 
@@ -74,6 +77,27 @@ Antigravity HUD works like a companion utility:
 - **Antigravity HUD: Show Quota**: Open the detailed quota information popup.
 - **Antigravity HUD: Refresh**: Force a re-scan of processes and refresh quota data.
 
-## License
+## 🤝 Contributing
 
-MIT
+Contributions are welcome! Whether it's reporting a bug, suggesting a feature, or submitting a pull request, your help is appreciated.
+
+1. Fork the repository.
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`).
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`).
+4. Push to the branch (`git push origin feature/AmazingFeature`).
+5. Open a Pull Request.
+
+## 🆘 Support & Feedback
+
+If you encounter any issues or have questions, please feel free to:
+- Open an [issue](https://github.com/smallyunet/vscode-antigravity-hud/issues) on GitHub.
+- Reach out via the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=smallyu.vscode-antigravity-hud) reviews.
+
+## 👤 Author
+
+**smallyu**
+- GitHub: [@smallyunet](https://github.com/smallyunet)
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
