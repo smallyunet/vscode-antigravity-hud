@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ProcessHunter } from './core/process-hunter';
 import { QuotaPoller } from './core/quota-poller';
 import { ConnectionManager, ConnectionStatusEvent } from './core/connection-manager';
+import { StatisticsManager } from './core/statistics-manager';
 import { StatusBarManager } from './ui/status-bar';
 import { ExtensionConfig, QuotaUpdateEvent } from './types';
 import { logger } from './utils/logger';
@@ -10,6 +11,7 @@ let processHunter: ProcessHunter;
 let quotaPoller: QuotaPoller;
 let connectionManager: ConnectionManager;
 let statusBarManager: StatusBarManager;
+let statisticsManager: StatisticsManager;
 
 /**
  * Extension activation entry point
@@ -24,10 +26,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     processHunter = new ProcessHunter(logger, config.processPatterns);
     quotaPoller = new QuotaPoller(logger, config.pollingInterval, config.apiPath);
     connectionManager = new ConnectionManager(processHunter, quotaPoller, logger);
-    statusBarManager = new StatusBarManager(context, config.lowQuotaThreshold, config.enableNotifications);
+    statisticsManager = new StatisticsManager(context);
+    statusBarManager = new StatusBarManager(context, statisticsManager, config.lowQuotaThreshold, config.enableNotifications);
 
-    // Wire up quota updates to status bar
+    // Wire up quota updates to status bar and stats manager
     quotaPoller.on('update', (event: QuotaUpdateEvent) => {
+        statisticsManager.processQuotaUpdate(event.quota);
         statusBarManager.update(event);
     });
 

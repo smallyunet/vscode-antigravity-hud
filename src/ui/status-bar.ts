@@ -1,6 +1,10 @@
 import * as vscode from 'vscode';
-import { QuotaResponse, ModelQuota, QuotaUpdateEvent } from '../types';
+import { QuotaResponse, QuotaUpdateEvent } from '../types';
 import { logger } from '../utils/logger';
+import { StatisticsManager } from '../core/statistics-manager';
+import { formatPercentage, formatTime, formatResetTime, getIconForPercentage, getColorForPercentage, getBackgroundColorForPercentage } from './formatters';
+import { NotificationManager } from './notification-manager';
+import { MenuManager } from './menu-manager';
 
 /**
  * StatusBarManager - Manages the VS Code status bar item for quota display
@@ -11,32 +15,50 @@ export class StatusBarManager {
     private statusBarItem: vscode.StatusBarItem;
     private currentQuota: QuotaResponse | null = null;
     private connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error' = 'disconnected';
-    private lowQuotaThreshold: number;
-    private enableNotifications: boolean;
-    private hasNotifiedLowQuota: Set<string> = new Set();
     private context: vscode.ExtensionContext;
     private selectedModelId: string | null = null;
     private static readonly KEY_SELECTED_MODEL = 'antigravity-hud.selectedModelId';
 
-    constructor(context: vscode.ExtensionContext, lowQuotaThreshold: number = 20, enableNotifications: boolean = true) {
+    // Components
+    private notificationManager: NotificationManager;
+    private menuManager: MenuManager;
+    private statsManager: StatisticsManager;
+
+    constructor(
+        context: vscode.ExtensionContext,
+        statsManager: StatisticsManager,
+        lowQuotaThreshold: number = 20,
+        enableNotifications: boolean = true
+    ) {
         this.context = context;
-        this.lowQuotaThreshold = lowQuotaThreshold;
-        this.enableNotifications = enableNotifications;
+        this.statsManager = statsManager;
 
         // Restore selected model
         this.selectedModelId = this.context.globalState.get<string | null>(StatusBarManager.KEY_SELECTED_MODEL, null);
 
-        // Create status bar item on the right side, with moderate priority
+        // Initialize sub-managers
+        this.notificationManager = new NotificationManager(
+            lowQuotaThreshold,
+            enableNotifications,
+            () => this.showQuotaDetails()
+        );
+
+        this.menuManager = new MenuManager(
+            statsManager,
+            (id) => this.setModelSelection(id)
+        );
+
+        // Create status bar item
         this.statusBarItem = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
             100
         );
-
         this.statusBarItem.command = 'antigravity-hud.showQuota';
+
         this.updateDisplay();
         this.statusBarItem.show();
 
-        logger.info(`StatusBarManager initialized (threshold: ${lowQuotaThreshold}%, notifications: ${enableNotifications})`);
+        logger.info(`StatusBarManager initialized`);
     }
 
     /**
@@ -50,63 +72,53 @@ export class StatusBarManager {
         } else if (event.quota) {
             this.connectionStatus = 'connected';
             this.currentQuota = event.quota;
-            this.checkLowQuota(event.quota);
+            this.notificationManager.checkLowQuota(event.quota);
             logger.debug('Status bar updated with new quota data');
         }
         this.updateDisplay();
     }
 
     /**
-     * Show model selection QuickPick
+     * Show detailed quota information
+     */
+    async showQuotaDetails(): Promise<void> {
+        await this.menuManager.showQuotaDetails(
+            this.currentQuota,
+            this.connectionStatus,
+            this.selectedModelId
+        );
+    }
+
+    /**
+     * Show model selection directly
      */
     async selectModel(): Promise<void> {
-        if (!this.currentQuota || this.currentQuota.models.length === 0) {
-            vscode.window.showInformationMessage('Antigravity HUD: No models available to select. Please wait for connection.');
-            return;
-        }
-
-        const AUTO_ITEM: vscode.QuickPickItem = {
-            label: '$(list-unordered) Auto (Lowest Quota)',
-            description: 'Show minimal quota across all models',
-            detail: this.selectedModelId === null ? 'Currently Selected' : undefined
-        };
-
-        const modelItems: vscode.QuickPickItem[] = this.currentQuota.models.map(m => ({
-            label: `$(${m.modelId === this.selectedModelId ? 'verified' : 'server'}) ${m.modelName}`,
-            description: `${this.formatPercentage(m)}% remaining`,
-            detail: m.modelId === this.selectedModelId ? 'Currently Selected' : undefined,
-            id: m.modelId // Store ID for retrieval
-        }));
-
-        const selected = await vscode.window.showQuickPick([AUTO_ITEM, ...modelItems], {
-            title: 'Antigravity HUD - Select Model to Monitor',
-            placeHolder: 'Select a model to show in Status Bar'
-        });
-
-        if (selected) {
-            if (selected === AUTO_ITEM) {
-                this.selectedModelId = null;
-                logger.info('Model selection cleared (Auto)');
-            } else {
-                const selectedModel = this.currentQuota.models.find(m =>
-                    selected.label.includes(m.modelName)
-                );
-                if (selectedModel) {
-                    this.selectedModelId = selectedModel.modelId;
-                    logger.info(`Model selected: ${selectedModel.modelName} (${selectedModel.modelId})`);
-                }
-            }
-
-            // Persist selection
-            await this.context.globalState.update(StatusBarManager.KEY_SELECTED_MODEL, this.selectedModelId);
-
-            // Update display
-            this.updateDisplay();
+        if (this.currentQuota) {
+            await this.menuManager.selectModel(this.currentQuota, this.selectedModelId);
         }
     }
 
-    private formatPercentage(model: ModelQuota): number {
-        return model.limit > 0 ? Math.round((model.remaining / model.limit) * 100) : 0;
+    /**
+     * Set the selected model ID (callback from MenuManager)
+     */
+    private async setModelSelection(modelId: string | null): Promise<void> {
+        this.selectedModelId = modelId;
+        await this.context.globalState.update(StatusBarManager.KEY_SELECTED_MODEL, this.selectedModelId);
+        this.updateDisplay();
+    }
+
+    /**
+     * Update configuration
+     */
+    updateConfig(lowQuotaThreshold: number, enableNotifications: boolean): void {
+        this.notificationManager.updateConfig(lowQuotaThreshold, enableNotifications);
+
+        // Re-check quota with new settings
+        if (this.currentQuota) {
+            this.notificationManager.recheck(this.currentQuota);
+        }
+
+        this.updateDisplay();
     }
 
     /**
@@ -169,9 +181,9 @@ export class StatusBarManager {
 
                 // Calculate overall percentage from primary model or average
                 const percentage = this.calculateOverallPercentage();
-                const color = this.getColorForPercentage(percentage);
-                const backgroundColor = this.getBackgroundColorForPercentage(percentage);
-                const icon = this.getIconForPercentage(percentage);
+                const color = getColorForPercentage(percentage);
+                const backgroundColor = getBackgroundColorForPercentage(percentage);
+                const icon = getIconForPercentage(percentage);
 
                 return {
                     text: `${icon} AG: ${percentage}%`,
@@ -194,46 +206,14 @@ export class StatusBarManager {
         if (this.selectedModelId) {
             const selectedModel = this.currentQuota.models.find(m => m.modelId === this.selectedModelId);
             if (selectedModel) {
-                return this.formatPercentage(selectedModel);
+                return formatPercentage(selectedModel);
             }
-            // Fallback: if selected model not found (e.g. config changed), return lowest or 0
         }
 
         // Use minimum percentage across all models (most restrictive)
-        const percentages = this.currentQuota.models.map(m => this.formatPercentage(m));
+        const percentages = this.currentQuota.models.map(m => formatPercentage(m));
 
         return Math.min(...percentages);
-    }
-
-    /**
-     * Get color based on percentage
-     */
-    private getColorForPercentage(percentage: number): string | vscode.ThemeColor | undefined {
-        return undefined; // Keep text color default/white when using background colors for better contrast
-    }
-
-    /**
-     * Get background color based on percentage
-     */
-    private getBackgroundColorForPercentage(percentage: number): vscode.ThemeColor | undefined {
-        if (percentage <= 20) {
-            return new vscode.ThemeColor('statusBarItem.errorBackground');
-        } else if (percentage <= 50) {
-            return new vscode.ThemeColor('statusBarItem.warningBackground');
-        }
-        return undefined;
-    }
-
-    /**
-     * Get icon based on percentage
-     */
-    private getIconForPercentage(percentage: number): string {
-        if (percentage <= 20) {
-            return '$(warning)';
-        } else if (percentage <= 50) {
-            return '$(info)';
-        }
-        return '$(verified)';
     }
 
     /**
@@ -262,16 +242,17 @@ export class StatusBarManager {
         );
 
         for (const model of sortedModels) {
-            const percent = model.limit > 0
-                ? Math.round((model.remaining / model.limit) * 100)
-                : 0;
+            const percent = formatPercentage(model);
 
             let statusIcon = '🟢';
             if (percent <= 20) statusIcon = '🔴';
             else if (percent <= 50) statusIcon = '🟡';
 
-            const remainingStr = `${model.remaining}/${model.limit} (${percent}%)`;
-            const resetStr = model.resetAt ? this.formatResetTime(model.resetAt) : '-';
+            const remainingStr = model.isFractional
+                ? `${percent}%`
+                : `${model.remaining}/${model.limit} (${percent}%)`;
+
+            const resetStr = model.resetAt ? formatResetTime(model.resetAt) : '-';
 
             md.appendMarkdown(`| **${model.modelName}** | ${statusIcon} | ${remainingStr} | ${resetStr} |\n`);
         }
@@ -280,197 +261,45 @@ export class StatusBarManager {
 
         // Footer info
         const lowest = this.calculateOverallPercentage();
+        let targetModel: import('../types').ModelQuota | undefined;
+
         if (this.selectedModelId) {
-            const selectedModel = this.currentQuota.models.find(m => m.modelId === this.selectedModelId);
-            if (selectedModel) {
-                md.appendMarkdown(`$(verified) **Monitored Model:** ${selectedModel.modelName} (${lowest}%)\n\n`);
+            targetModel = this.currentQuota.models.find(m => m.modelId === this.selectedModelId);
+            if (targetModel) {
+                md.appendMarkdown(`$(verified) **Monitored Model:** ${targetModel.modelName} (${formatPercentage(targetModel)}%)\n\n`);
             }
         } else {
             md.appendMarkdown(`$(info) **Status Bar displays:** Lowest quota across all models (${lowest}%)\n\n`);
+            // Find the model with lowest quota to show stats for
+            targetModel = this.currentQuota.models.reduce((prev, curr) =>
+                formatPercentage(curr) < formatPercentage(prev) ? curr : prev
+            );
         }
 
-        md.appendMarkdown(`$(clock) **Last updated:** ${this.formatTime(this.currentQuota.lastUpdated)}`);
+        // Add stats for target model
+        if (targetModel) {
+            const stats = this.statsManager.getModelStats(targetModel.modelId);
+            if (stats && (stats.consumptionSpeed > 0 || stats.estimatedTimeRemaining)) {
+                md.appendMarkdown(`**Statistics (${targetModel.modelName}):**\n`);
+
+                if (stats.consumptionSpeed > 0) {
+                    md.appendMarkdown(`- Consumption Speed: ~${stats.consumptionSpeed.toFixed(1)}% / hour\n`);
+                }
+
+                if (stats.estimatedTimeRemaining) {
+                    const h = Math.floor(stats.estimatedTimeRemaining / 60);
+                    const m = Math.floor(stats.estimatedTimeRemaining % 60);
+                    md.appendMarkdown(`- Est. Time Remaining: ~${h}h ${m}m\n`);
+                }
+                md.appendMarkdown('\n');
+            }
+        }
+
+        md.appendMarkdown(`$(clock) **Last updated:** ${formatTime(this.currentQuota.lastUpdated)}`);
 
         return md;
     }
 
-    /**
-     * Format reset time relative to now
-     */
-    private formatResetTime(date: Date): string {
-        const now = new Date();
-        const diff = date.getTime() - now.getTime();
-
-        if (diff <= 0) {
-            return 'now';
-        }
-
-        const hours = Math.floor(diff / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-
-        if (hours > 0) {
-            return `${hours}h ${minutes}m`;
-        }
-        return `${minutes}m`;
-    }
-
-    /**
-     * Format time for display
-     */
-    private formatTime(date: Date): string {
-        return date.toLocaleTimeString();
-    }
-
-    /**
-     * Show detailed quota information in a QuickPick
-     */
-    async showQuotaDetails(): Promise<void> {
-        if (!this.currentQuota || this.currentQuota.models.length === 0) {
-            vscode.window.showInformationMessage(
-                'Antigravity HUD: No quota data available. ' +
-                (this.connectionStatus === 'disconnected'
-                    ? 'Not connected to Antigravity process.'
-                    : 'Waiting for data...')
-            );
-            return;
-        }
-
-        const modelItems: vscode.QuickPickItem[] = this.currentQuota.models.map(model => ({
-            label: `$(${this.getQuickPickIcon(model)}) ${model.modelName}`,
-            description: `${model.remaining}/${model.limit}`,
-            detail: this.getModelDetail(model) + (model.modelId === this.selectedModelId ? ' • $(verified) Monitored' : '')
-        }));
-
-        const items: vscode.QuickPickItem[] = [...modelItems];
-
-        // Add separator and info items
-        items.push({ label: '', kind: vscode.QuickPickItemKind.Separator });
-        items.push({
-            label: '$(clock) Last Updated',
-            description: this.formatTime(this.currentQuota.lastUpdated)
-        });
-        items.push({
-            label: '$(refresh) Refresh Now',
-            description: 'Fetch latest quota data'
-        });
-        items.push({
-            label: '$(settings) Select Monitored Model',
-            description: 'Choose which model to show in Status Bar'
-        });
-
-        const selected = await vscode.window.showQuickPick(items, {
-            title: 'Antigravity HUD - Model Quotas',
-            placeHolder: 'Select an item for more info'
-        });
-
-        if (selected?.label === '$(refresh) Refresh Now') {
-            vscode.commands.executeCommand('antigravity-hud.refresh');
-        } else if (selected?.label === '$(settings) Select Monitored Model') {
-            this.selectModel();
-        }
-    }
-
-    /**
-     * Get icon for QuickPick based on model quota
-     */
-    private getQuickPickIcon(model: ModelQuota): string {
-        const percent = model.limit > 0
-            ? Math.round((model.remaining / model.limit) * 100)
-            : 0;
-
-        if (percent <= 20) return 'error';
-        if (percent <= 50) return 'warning';
-        return 'pass';
-    }
-
-    /**
-     * Get detail string for model in QuickPick
-     */
-    private getModelDetail(model: ModelQuota): string {
-        const percent = model.limit > 0
-            ? Math.round((model.remaining / model.limit) * 100)
-            : 0;
-
-        let detail = `${percent}% remaining`;
-        if (model.resetAt) {
-            detail += ` • Resets in ${this.formatResetTime(model.resetAt)}`;
-        }
-        return detail;
-    }
-
-    /**
-     * Get current quota data
-     */
-    getCurrentQuota(): QuotaResponse | null {
-        return this.currentQuota;
-    }
-
-    /**
-     * Update configuration
-     */
-    updateConfig(lowQuotaThreshold: number, enableNotifications: boolean): void {
-        this.lowQuotaThreshold = lowQuotaThreshold;
-        this.enableNotifications = enableNotifications;
-
-        // Reset notification state if threshold changes or notifications are re-enabled
-        this.hasNotifiedLowQuota.clear();
-
-        // Re-check quota with new settings
-        if (this.currentQuota) {
-            this.checkLowQuota(this.currentQuota);
-        }
-
-        this.updateDisplay();
-        logger.info(`StatusBarManager config updated (threshold: ${lowQuotaThreshold}%, notifications: ${enableNotifications})`);
-    }
-
-    /**
-     * Check for low quota and notify user
-     */
-    private checkLowQuota(quota: QuotaResponse): void {
-        if (!this.enableNotifications) {
-            return;
-        }
-
-        // Group models by percentage
-        const modelsByPercentage = new Map<number, ModelQuota[]>();
-
-        for (const model of quota.models) {
-            if (model.limit <= 0) continue;
-
-            const percentage = Math.round((model.remaining / model.limit) * 100);
-
-            if (percentage <= this.lowQuotaThreshold) {
-                if (!this.hasNotifiedLowQuota.has(model.modelId)) {
-                    const group = modelsByPercentage.get(percentage) || [];
-                    group.push(model);
-                    modelsByPercentage.set(percentage, group);
-                }
-            }
-        }
-
-        // Send notifications for each group
-        for (const [percentage, models] of modelsByPercentage) {
-            const modelNames = models.map(m => m.modelName).join(', ');
-            const isPlural = models.length > 1;
-            const message = `Antigravity Warning: ${modelNames} ${isPlural ? 'are' : 'is'} low on quota (${percentage}% remaining).`;
-
-            vscode.window.showWarningMessage(
-                message,
-                'Show Details'
-            ).then(selection => {
-                if (selection === 'Show Details') {
-                    this.showQuotaDetails();
-                }
-            });
-
-            // Mark all as notified
-            for (const model of models) {
-                this.hasNotifiedLowQuota.add(model.modelId);
-                logger.info(`Low quota notification sent for ${model.modelName} (${percentage}%)`);
-            }
-        }
-    }
     /**
      * Dispose of the status bar item
      */

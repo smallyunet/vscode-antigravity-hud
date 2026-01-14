@@ -64,18 +64,23 @@ export function parseQuotaResponse(data: any): QuotaResponse {
                 // Quota logic: prefer explicit remaining count, else calculate from percentage
                 let remaining = 0;
                 let limit = 100;
+                let isFractional = false;
 
                 if (m.remaining !== undefined) remaining = Number(m.remaining);
                 else if (m.left !== undefined) remaining = Number(m.left);
                 else if (m.remaining_percentage !== undefined) {
                     remaining = Math.round(Number(m.remaining_percentage) * 100);
+                    isFractional = true;
                 } else if (m.remainingPercentage !== undefined) {
                     remaining = Math.round(Number(m.remainingPercentage) * 100);
+                    isFractional = true;
                 } else if (m.remaining_fraction !== undefined) {
                     remaining = Math.round(Number(m.remaining_fraction) * 100);
+                    isFractional = true;
                 } else if (quotaInfo.remainingFraction !== undefined) {
                     // Handle nested quotaInfo.remainingFraction
                     remaining = Math.round(Number(quotaInfo.remainingFraction) * 100);
+                    isFractional = true;
                 }
 
                 if (m.limit !== undefined) limit = Number(m.limit);
@@ -95,7 +100,8 @@ export function parseQuotaResponse(data: any): QuotaResponse {
                         modelName,
                         remaining,
                         limit,
-                        resetAt
+                        resetAt,
+                        isFractional
                     });
                 }
             }

@@ -58,6 +58,7 @@ export interface ModelQuota {
     remaining: number;
     limit: number;
     resetAt?: Date;
+    isFractional?: boolean;
 }
 
 /**
@@ -85,4 +86,13 @@ export interface ExtensionConfig {
     apiPath: string;
     lowQuotaThreshold: number;
     enableNotifications: boolean;
+}
+
+export interface ModelStatistics {
+    totalUsageTime: number; // seconds
+    usageSinceLast100: number; // seconds
+    last100Time?: number; // timestamp
+    consumptionSpeed: number; // % per hour
+    estimatedTimeRemaining?: number; // minutes
+    averageUsageTime?: number; // TBD
 }
