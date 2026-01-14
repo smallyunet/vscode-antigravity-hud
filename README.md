@@ -27,10 +27,23 @@ Antigravity HUD automatically detects your local Antigravity instance and displa
 ## ✨ Features
 
 - 🎯 **Zero Configuration**: Automatically hunts for Antigravity editor and Language Server processes to find your API port and token.
+- ⚡ **Auto-Detection**: Intelligently detects and displays the model you are currently using.
+- 📉 **Usage Statistics**: Tracks consumption speed (% per hour) and estimates remaining time for each model.
 - 📊 **Real-Time Monitoring**: Polls the local API to keep your quota information up-to-date.
-- 💎 **Unobtrusive UI**: A minimal `AG: XX%` indicator sits quietly in your status bar, changing color to warn you when quotas get low.
-- 🔍 **Detailed Insights**: Click the status bar item to see a breakdown of usage across all available models.
+- 💎 **Unobtrusive UI**: A minimal `AG: XX%` indicator sits in your status bar, with a rich hover tooltip.
+- 🔍 **Detailed Insights**: View comprehensive statistics, including total usage time and estimated full cycle time.
 - 🔔 **Smart Notifications**: Optional alerts when you're running low on quota.
+
+## Usage Statistics & Insights
+
+Antigravity HUD now does more than just show numbers. It analyzes your usage patterns to provide:
+
+- **Consumption Speed**: See how fast you're using each model's quota (e.g., `~120%/h`).
+- **Estimated Time Remaining**: Know exactly how many minutes or hours of usage you have left at your current pace.
+- **Active Model Tracking**: The status bar automatically switches to show the model generating activity.
+- **Usage History**: Tracks total time spent using each model across sessions.
+
+To view detailed statistics, click the status bar item and select a specific model from the list.
 
 ## Installation
 
@@ -49,9 +62,9 @@ The status bar icon provides a quick visual health check of your quota:
 
 | Icon | Meaning | Description |
 |------|---------|-------------|
-| `✅ AG: 85%` | **Healthy** | Plenty of quota remaining (>50%). |
-| `ℹ️ AG: 35%` | **Moderate** | Quota is being used (20-50%). |
-| `⚠️ AG: 15%` | **Low** | Critical quota level (<20%). Time to be careful. |
+| `🟢 AG: 85%` | **Healthy** | Plenty of quota remaining (>50%). |
+| `🟡 AG: 35%` | **Moderate** | Quota is being used (20-50%). |
+| `🔴 AG: 15%` | **Low** | Critical quota level (<20%). |
 | `🚫 AG: --` | **Disconnected** | Could not find a running Antigravity instance. |
 | `🔄 AG: ...` | **Connecting** | Searching for processes or fetching initial data. |
 
@@ -63,14 +76,17 @@ You can customize the extension's behavior in VS Code Settings:
 |---------|---------|-------------|
 | `antigravity-hud.pollingInterval` | `60` | How often to fetch quota data (in seconds). |
 | `antigravity-hud.processPatterns` | `["antigravity", "gemini-ls", "gemini-code"]` | Process names to scan for API credentials. |
+| `antigravity-hud.lowQuotaThreshold` | `20` | Threshold percentage for low quota warnings. |
+| `antigravity-hud.enableNotifications` | `true` | Enable or disable low quota desktop notifications. |
 
 ## How It Works
 
 Antigravity HUD works like a companion utility:
 1. **Process Hunting**: It scans your system for running Antigravity-related processes.
 2. **Credential Extraction**: It securely extracts the `--api-port` and `--auth-token` arguments from the running process.
-3. **API Polling**: It uses these credentials to query the local `http://127.0.0.1:{port}/api/v1/quota` endpoint.
-4. **Visual Feedback**: It aggregates the lowest quota percentage and updates the status bar.
+3. **API Polling**: It uses these credentials to query the local API and parse the response.
+4. **Calculations**: It processes updates to calculate consumption speed, usage time, and auto-detect activity.
+5. **Visual Feedback**: It displays the active or lowest model's quota in the status bar and provides detailed insights via hover and click.
 
 ## Commands
 
