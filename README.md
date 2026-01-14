@@ -24,6 +24,8 @@ Antigravity HUD automatically detects your local Antigravity instance and displa
 
 ![Antigravity HUD Quota Details](images/quota-hover.png)
 
+![Antigravity HUD Quota Details](images/quota-hover-2.png)
+
 ## ✨ Features
 
 - 🎯 **Zero Configuration**: Automatically hunts for Antigravity editor and Language Server processes to find your API port and token.
