@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { QuotaResponse, QuotaUpdateEvent } from '../types';
 import { logger } from '../utils/logger';
 import { StatisticsManager } from '../core/statistics-manager';
-import { formatPercentage, formatTime, formatResetTime, getIconForPercentage, getColorForPercentage, getBackgroundColorForPercentage } from './formatters';
+import { formatPercentage, formatTime, formatResetTime, getIconForPercentage, getColorForPercentage, getBackgroundColorForPercentage, formatDuration } from './formatters';
 import { NotificationManager } from './notification-manager';
 import { MenuManager } from './menu-manager';
 
@@ -202,7 +202,7 @@ export class StatusBarManager {
             return 0;
         }
 
-        // If a model is selected, use that
+        // 1. If a model is manually selected, use that
         if (this.selectedModelId) {
             const selectedModel = this.currentQuota.models.find(m => m.modelId === this.selectedModelId);
             if (selectedModel) {
@@ -210,9 +210,17 @@ export class StatusBarManager {
             }
         }
 
-        // Use minimum percentage across all models (most restrictive)
-        const percentages = this.currentQuota.models.map(m => formatPercentage(m));
+        // 2. Try to find the most recently used model
+        const activeModelId = this.statsManager.getMostRecentlyConsumedModelId();
+        if (activeModelId) {
+            const activeModel = this.currentQuota.models.find(m => m.modelId === activeModelId);
+            if (activeModel) {
+                return formatPercentage(activeModel);
+            }
+        }
 
+        // 3. Fallback: Use minimum percentage across all models (most restrictive)
+        const percentages = this.currentQuota.models.map(m => formatPercentage(m));
         return Math.min(...percentages);
     }
 
@@ -233,13 +241,16 @@ export class StatusBarManager {
         md.appendMarkdown('### Antigravity HUD Quotas\n\n');
 
         // Table Header
-        md.appendMarkdown('| Model | Status | Remaining | Reset |\n');
+        md.appendMarkdown('| Model | Status | Quota | Reset |\n');
         md.appendMarkdown('| :--- | :---: | :---: | :--- |\n');
 
-        // Sort models by name for consistent display
-        const sortedModels = [...this.currentQuota.models].sort((a, b) =>
-            a.modelName.localeCompare(b.modelName)
-        );
+        // Sort models by Quota (Ascending) then Name
+        const sortedModels = [...this.currentQuota.models].sort((a, b) => {
+            const pctA = formatPercentage(a);
+            const pctB = formatPercentage(b);
+            if (pctA !== pctB) return pctA - pctB;
+            return a.modelName.localeCompare(b.modelName);
+        });
 
         for (const model of sortedModels) {
             const percent = formatPercentage(model);
@@ -254,6 +265,7 @@ export class StatusBarManager {
 
             const resetStr = model.resetAt ? formatResetTime(model.resetAt) : '-';
 
+            // Status icon in middle column
             md.appendMarkdown(`| **${model.modelName}** | ${statusIcon} | ${remainingStr} | ${resetStr} |\n`);
         }
 
@@ -269,29 +281,44 @@ export class StatusBarManager {
                 md.appendMarkdown(`$(verified) **Monitored Model:** ${targetModel.modelName} (${formatPercentage(targetModel)}%)\n\n`);
             }
         } else {
-            md.appendMarkdown(`$(info) **Status Bar displays:** Lowest quota across all models (${lowest}%)\n\n`);
-            // Find the model with lowest quota to show stats for
-            targetModel = this.currentQuota.models.reduce((prev, curr) =>
-                formatPercentage(curr) < formatPercentage(prev) ? curr : prev
-            );
+            // Check for active model
+            const activeModelId = this.statsManager.getMostRecentlyConsumedModelId();
+            if (activeModelId) {
+                targetModel = this.currentQuota.models.find(m => m.modelId === activeModelId);
+            }
+
+            if (targetModel) {
+                md.appendMarkdown(`$(zap) **Active Model:** ${targetModel.modelName} (${formatPercentage(targetModel)}%)\n\n`);
+            } else {
+                // Fallback to lowest
+                md.appendMarkdown(`$(info) **Status Bar displays:** Lowest quota across all models (${lowest}%)\n\n`);
+                targetModel = this.currentQuota.models.reduce((prev, curr) =>
+                    formatPercentage(curr) < formatPercentage(prev) ? curr : prev
+                );
+            }
         }
 
         // Add stats for target model
         if (targetModel) {
             const stats = this.statsManager.getModelStats(targetModel.modelId);
             if (stats && (stats.consumptionSpeed > 0 || stats.estimatedTimeRemaining)) {
-                md.appendMarkdown(`**Statistics (${targetModel.modelName}):**\n`);
+
+                const speed = Math.round(stats.consumptionSpeed);
+                let speedStr = '';
+                let etaStr = '';
 
                 if (stats.consumptionSpeed > 0) {
-                    md.appendMarkdown(`- Consumption Speed: ~${stats.consumptionSpeed.toFixed(1)}% / hour\n`);
+                    speedStr = `**Speed:** ~${speed}%/h`;
                 }
 
                 if (stats.estimatedTimeRemaining) {
-                    const h = Math.floor(stats.estimatedTimeRemaining / 60);
-                    const m = Math.floor(stats.estimatedTimeRemaining % 60);
-                    md.appendMarkdown(`- Est. Time Remaining: ~${h}h ${m}m\n`);
+                    // Convert minutes to seconds for formatDuration
+                    const durationStr = formatDuration(stats.estimatedTimeRemaining * 60);
+                    etaStr = `**Remaining:** ~${durationStr}`;
                 }
-                md.appendMarkdown('\n');
+
+                const separator = (speedStr && etaStr) ? ' • ' : '';
+                md.appendMarkdown(`${speedStr}${separator}${etaStr}\n\n`);
             }
         }
 

@@ -46,15 +46,25 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
+ * Format visually percentage as a bar
+ * e.g. [■■■□□]
+ */
+export function formatProgressBar(percentage: number, width: number = 5): string {
+    const filled = Math.round((percentage / 100) * width);
+    const empty = width - filled;
+    return '█'.repeat(filled) + '░'.repeat(empty);
+}
+
+/**
  * Get icon based on percentage
  */
 export function getIconForPercentage(percentage: number): string {
     if (percentage <= 20) {
-        return '$(warning)';
+        return '$(warning)'; // Red
     } else if (percentage <= 50) {
-        return '$(info)';
+        return '$(issue-opened)'; // Yellow
     }
-    return '$(verified)';
+    return '$(pass)'; // Green
 }
 
 /**

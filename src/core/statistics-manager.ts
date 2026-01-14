@@ -7,6 +7,7 @@ interface StoredModelStats {
     last100Time?: number; // timestamp
     history: { timestamp: number; percent: number }[];
     lastUpdateTimestamp: number;
+    lastConsumptionTime?: number;
 }
 
 export class StatisticsManager {
@@ -56,6 +57,17 @@ export class StatisticsManager {
             // Calculate percentage
             const percent = model.limit > 0 ? (model.remaining / model.limit) * 100 : 0;
 
+            // Track consumption (if percent dropped)
+            // Check previous percent from history or last update
+            const lastPercent = modelStats.history.length > 0
+                ? modelStats.history[modelStats.history.length - 1].percent
+                : percent;
+
+            // If percent dropped (and reasonable drop, not a reset from 0 to 100)
+            if (percent < lastPercent && (lastPercent - percent) < 50) {
+                modelStats.lastConsumptionTime = now;
+            }
+
             // Update Total Usage Time
             // We only add time if the gap is reasonable (e.g. < 5 mins). 
             // This prevents counting time when VS Code was closed.
@@ -92,6 +104,22 @@ export class StatisticsManager {
     }
 
     /**
+     * Get the model ID that was most recently consumed
+     */
+    getMostRecentlyConsumedModelId(): string | null {
+        let lastTime = 0;
+        let modelId = null;
+
+        for (const [id, stat] of Object.entries(this.stats)) {
+            if (stat.lastConsumptionTime && stat.lastConsumptionTime > lastTime) {
+                lastTime = stat.lastConsumptionTime;
+                modelId = id;
+            }
+        }
+        return modelId;
+    }
+
+    /**
      * Get calculated statistics for a model
      */
     getModelStats(modelId: string): ModelStatistics | null {
@@ -101,6 +129,7 @@ export class StatisticsManager {
         const now = Date.now();
 
         // Calculate Speed (% per hour)
+        // ... (rest of the method unchanged)
         let speed = 0;
         if (stored.history.length >= 2) {
             // Look at the window of history we have
