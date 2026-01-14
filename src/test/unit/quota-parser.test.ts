@@ -41,6 +41,7 @@ describe('QuotaParser', () => {
 
         const result = parseQuotaResponse(data);
         expect(result.models[0].remaining).to.equal(75);
+        expect(result.models[0].isLikelyBucketed).to.be.true;
     });
 
     it('should fallback to legacy plan_status if no models found', () => {

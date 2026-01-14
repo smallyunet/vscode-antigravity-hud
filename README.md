@@ -16,15 +16,9 @@
 
 Antigravity HUD automatically detects your local Antigravity instance and displays real-time quota information in your status bar, keeping you informed without breaking your flow.
 
-![Antigravity HUD Status Bar](images/main-ui.png)
+![Antigravity HUD Status Bar](images/1.png)
 
-![Antigravity HUD Status Bar](images/main-ui-2.png)
-
-![Antigravity HUD Status Bar](images/main-ui-3.png)
-
-![Antigravity HUD Quota Details](images/quota-hover.png)
-
-![Antigravity HUD Quota Details](images/quota-hover-2.png)
+![Antigravity HUD Status Bar](images/2.png)
 
 ## ✨ Features
 
@@ -44,6 +38,11 @@ Antigravity HUD now does more than just show numbers. It analyzes your usage pat
 - **Estimated Time Remaining**: Know exactly how many minutes or hours of usage you have left at your current pace.
 - **Active Model Tracking**: The status bar automatically switches to show the model generating activity.
 - **Usage History**: Tracks total time spent using each model across sessions.
+
+### Quota Display Characteristics
+
+> [!NOTE]
+> In recent versions of the Antigravity editor, model usage quota is reported in 20% increments (buckets). To accurately reflect this, the HUD displays usage as ranges (e.g., `80-100%`, `60-80%`) for these models. This provides a more realistic view of your remaining capacity when precise counts are unavailable.
 
 To view detailed statistics, click the status bar item and select a specific model from the list.
 

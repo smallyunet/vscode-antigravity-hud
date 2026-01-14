@@ -2,10 +2,37 @@ import * as vscode from 'vscode';
 import { ModelQuota } from '../types';
 
 /**
- * Format percentage for display
+ * Format percentage for display (as raw number)
  */
 export function formatPercentage(model: ModelQuota): number {
     return model.limit > 0 ? Math.round((model.remaining / model.limit) * 100) : 0;
+}
+
+/**
+ * Format percentage for display (as string, handling buckets)
+ */
+export function formatPercentageDisplay(model: ModelQuota): string {
+    const percentage = formatPercentage(model);
+
+    if (model.isLikelyBucketed && percentage > 0 && percentage % 20 === 0) {
+        // e.g., 100% -> 80-100%, 80% -> 60-80%
+        return `${percentage - 20}-${percentage}%`;
+    }
+
+    return `${percentage}%`;
+}
+
+/**
+ * Format full quota text (e.g., "50/100 (50%)" or "80-100%")
+ */
+export function formatQuotaText(model: ModelQuota): string {
+    const percentDisplay = formatPercentageDisplay(model);
+
+    if (model.isFractional || model.isLikelyBucketed) {
+        return percentDisplay;
+    }
+
+    return `${model.remaining}/${model.limit} (${percentDisplay})`;
 }
 
 /**

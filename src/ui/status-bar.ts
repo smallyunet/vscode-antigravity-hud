@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { QuotaResponse, QuotaUpdateEvent } from '../types';
 import { logger } from '../utils/logger';
 import { StatisticsManager } from '../core/statistics-manager';
-import { formatPercentage, formatTime, formatResetTime, getIconForPercentage, getColorForPercentage, getBackgroundColorForPercentage, formatDuration } from './formatters';
+import { formatPercentage, formatPercentageDisplay, formatQuotaText, formatTime, formatResetTime, getIconForPercentage, getColorForPercentage, getBackgroundColorForPercentage, formatDuration } from './formatters';
 import { NotificationManager } from './notification-manager';
 import { MenuManager } from './menu-manager';
 
@@ -180,13 +180,29 @@ export class StatusBarManager {
                 }
 
                 // Calculate overall percentage from primary model or average
-                const percentage = this.calculateOverallPercentage();
-                const color = getColorForPercentage(percentage);
-                const backgroundColor = getBackgroundColorForPercentage(percentage);
-                const icon = getIconForPercentage(percentage);
+                const overallPercentage = this.calculateOverallPercentage();
+                const color = getColorForPercentage(overallPercentage);
+                const backgroundColor = getBackgroundColorForPercentage(overallPercentage);
+                const icon = getIconForPercentage(overallPercentage);
+
+                // Use the primary model for more descriptive text if possible
+                let displayPercent = `${overallPercentage}%`;
+                const activeModelId = this.statsManager.getMostRecentlyConsumedModelId() || this.selectedModelId;
+                if (activeModelId) {
+                    const model = this.currentQuota.models.find(m => m.modelId === activeModelId);
+                    if (model) {
+                        displayPercent = formatPercentageDisplay(model);
+                    }
+                } else if (this.currentQuota.models.length > 0) {
+                    // Use formatPercentageDisplay on the lowest to handle buckets
+                    const lowestModel = this.currentQuota.models.reduce((prev, curr) =>
+                        formatPercentage(curr) < formatPercentage(prev) ? curr : prev
+                    );
+                    displayPercent = formatPercentageDisplay(lowestModel);
+                }
 
                 return {
-                    text: `${icon} AG: ${percentage}%`,
+                    text: `${icon} AG: ${displayPercent}`,
                     tooltip: this.formatTooltip(),
                     color,
                     backgroundColor
@@ -259,10 +275,7 @@ export class StatusBarManager {
             if (percent <= 20) statusIcon = '🔴';
             else if (percent <= 50) statusIcon = '🟡';
 
-            const remainingStr = model.isFractional
-                ? `${percent}%`
-                : `${model.remaining}/${model.limit} (${percent}%)`;
-
+            const remainingStr = formatQuotaText(model);
             const resetStr = model.resetAt ? formatResetTime(model.resetAt) : '-';
 
             // Status icon in middle column
@@ -272,13 +285,15 @@ export class StatusBarManager {
         md.appendMarkdown('\n---\n');
 
         // Footer info
-        const lowest = this.calculateOverallPercentage();
+        const lowestModel = this.currentQuota.models.reduce((prev, curr) =>
+            formatPercentage(curr) < formatPercentage(prev) ? curr : prev
+        );
         let targetModel: import('../types').ModelQuota | undefined;
 
         if (this.selectedModelId) {
             targetModel = this.currentQuota.models.find(m => m.modelId === this.selectedModelId);
             if (targetModel) {
-                md.appendMarkdown(`$(verified) **Monitored Model:** ${targetModel.modelName} (${formatPercentage(targetModel)}%)\n\n`);
+                md.appendMarkdown(`$(verified) **Monitored Model:** ${targetModel.modelName} (${formatPercentageDisplay(targetModel)})\n\n`);
             }
         } else {
             // Check for active model
@@ -288,13 +303,11 @@ export class StatusBarManager {
             }
 
             if (targetModel) {
-                md.appendMarkdown(`$(zap) **Active Model:** ${targetModel.modelName} (${formatPercentage(targetModel)}%)\n\n`);
+                md.appendMarkdown(`$(zap) **Active Model:** ${targetModel.modelName} (${formatPercentageDisplay(targetModel)})\n\n`);
             } else {
                 // Fallback to lowest
-                md.appendMarkdown(`$(info) **Status Bar displays:** Lowest quota across all models (${lowest}%)\n\n`);
-                targetModel = this.currentQuota.models.reduce((prev, curr) =>
-                    formatPercentage(curr) < formatPercentage(prev) ? curr : prev
-                );
+                md.appendMarkdown(`$(info) **Status Bar displays:** Lowest quota across all models (${formatPercentageDisplay(lowestModel)})\n\n`);
+                targetModel = lowestModel;
             }
         }
 

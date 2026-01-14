@@ -59,6 +59,7 @@ export interface ModelQuota {
     limit: number;
     resetAt?: Date;
     isFractional?: boolean;
+    isLikelyBucketed?: boolean;
 }
 
 /**
