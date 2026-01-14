@@ -60,6 +60,7 @@ export interface ModelQuota {
     resetAt?: Date;
     isFractional?: boolean;
     isLikelyBucketed?: boolean;
+    isRecommended?: boolean;
 }
 
 /**
@@ -67,6 +68,7 @@ export interface ModelQuota {
  */
 export interface QuotaResponse {
     models: ModelQuota[];
+    userTier?: string;
     lastUpdated: Date;
 }
 

@@ -63,6 +63,15 @@ export function formatTime(date: Date): string {
 }
 
 /**
+ * Format absolute time (HH:MM)
+ */
+export function formatAbsoluteTime(date: Date): string {
+    const h = date.getHours().toString().padStart(2, '0');
+    const m = date.getMinutes().toString().padStart(2, '0');
+    return `${h}:${m}`;
+}
+
+/**
  * Format duration in seconds to readable string
  */
 export function formatDuration(seconds: number): string {

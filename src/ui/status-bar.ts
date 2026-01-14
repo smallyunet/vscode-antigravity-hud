@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { QuotaResponse, QuotaUpdateEvent } from '../types';
 import { logger } from '../utils/logger';
 import { StatisticsManager } from '../core/statistics-manager';
-import { formatPercentage, formatPercentageDisplay, formatQuotaText, formatTime, formatResetTime, getIconForPercentage, getColorForPercentage, getBackgroundColorForPercentage, formatDuration } from './formatters';
+import { formatPercentage, formatPercentageDisplay, formatQuotaText, formatTime, formatResetTime, formatAbsoluteTime, getIconForPercentage, getColorForPercentage, getBackgroundColorForPercentage, formatDuration } from './formatters';
 import { NotificationManager } from './notification-manager';
 import { MenuManager } from './menu-manager';
 
@@ -254,17 +254,29 @@ export class StatusBarManager {
             return md;
         }
 
-        md.appendMarkdown('### Antigravity HUD Quotas\n\n');
+        // Header with User Tier
+        if (this.currentQuota.userTier) {
+            md.appendMarkdown(`### Antigravity HUD (${this.currentQuota.userTier})\n\n`);
+        } else {
+            md.appendMarkdown('### Antigravity HUD\n\n');
+        }
 
         // Table Header
         md.appendMarkdown('| Model | Status | Quota | Reset |\n');
         md.appendMarkdown('| :--- | :---: | :---: | :--- |\n');
 
-        // Sort models by Quota (Ascending) then Name
+        // Sort models: Recommended First -> High Quota -> Low Quota -> Name
         const sortedModels = [...this.currentQuota.models].sort((a, b) => {
+            // 1. Recommended first
+            if (a.isRecommended && !b.isRecommended) return -1;
+            if (!a.isRecommended && b.isRecommended) return 1;
+
+            // 2. Sort by Quota (Ascending)
             const pctA = formatPercentage(a);
             const pctB = formatPercentage(b);
             if (pctA !== pctB) return pctA - pctB;
+
+            // 3. Sort by Name
             return a.modelName.localeCompare(b.modelName);
         });
 
@@ -275,11 +287,27 @@ export class StatusBarManager {
             if (percent <= 20) statusIcon = '🔴';
             else if (percent <= 50) statusIcon = '🟡';
 
+            // Mark recommended models
+            let displayModelName = model.modelName;
+            if (model.isRecommended) {
+                displayModelName = `★ ${displayModelName}`;
+            }
+
             const remainingStr = formatQuotaText(model);
-            const resetStr = model.resetAt ? formatResetTime(model.resetAt) : '-';
+
+            // Show Absolute Time (e.g. "18:15") and relative in parens if space allows, 
+            // but table cells wrap, so let's stick to Absolute + Relative tooltip? 
+            // Better: "18:15" with Relative in tooltip, or just "18:15" 
+            let resetStr = '-';
+            if (model.resetAt) {
+                resetStr = formatAbsoluteTime(model.resetAt); // "18:15"
+                // Add relative time as part of the cell if expected to fit, or simple string concatenation
+                // md does not support cell tooltips easily.
+                resetStr += ` (${formatResetTime(model.resetAt)})`;
+            }
 
             // Status icon in middle column
-            md.appendMarkdown(`| **${model.modelName}** | ${statusIcon} | ${remainingStr} | ${resetStr} |\n`);
+            md.appendMarkdown(`| **${displayModelName}** | ${statusIcon} | ${remainingStr} | ${resetStr} |\n`);
         }
 
         md.appendMarkdown('\n---\n');

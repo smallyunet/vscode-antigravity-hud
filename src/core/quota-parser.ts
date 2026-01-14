@@ -106,6 +106,8 @@ export function parseQuotaResponse(data: any): QuotaResponse {
                         isLikelyBucketed = true;
                     }
 
+                    const isRecommended = !!m.isRecommended;
+
                     models.push({
                         modelId,
                         modelName,
@@ -113,7 +115,8 @@ export function parseQuotaResponse(data: any): QuotaResponse {
                         limit,
                         resetAt,
                         isFractional,
-                        isLikelyBucketed
+                        isLikelyBucketed,
+                        isRecommended
                     });
                 }
             }
@@ -136,8 +139,17 @@ export function parseQuotaResponse(data: any): QuotaResponse {
         });
     }
 
+    // Parse User Tier
+    let userTier: string | undefined = undefined;
+    if (data?.userStatus?.userTier?.name) {
+        userTier = data.userStatus.userTier.name;
+    } else if (data?.user_status?.userTier?.name) {
+        userTier = data.user_status.userTier.name;
+    }
+
     return {
         models,
+        userTier,
         lastUpdated: new Date()
     };
 }

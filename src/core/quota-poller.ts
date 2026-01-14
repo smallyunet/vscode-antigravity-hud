@@ -142,6 +142,7 @@ export class QuotaPoller extends EventEmitter {
 
             this.logger.debug('Quota API response received', { size: JSON.stringify(data).length });
 
+
             const quota = parseQuotaResponse(data);
             this.lastQuota = quota;
 
