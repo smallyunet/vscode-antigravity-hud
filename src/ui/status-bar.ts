@@ -308,13 +308,13 @@ export class StatusBarManager {
                 let etaStr = '';
 
                 if (stats.consumptionSpeed > 0) {
-                    speedStr = `**Speed:** ~${speed}%/h`;
+                    speedStr = `$(dashboard) **Speed:** ~${speed}%/h`;
                 }
 
                 if (stats.estimatedTimeRemaining) {
                     // Convert minutes to seconds for formatDuration
                     const durationStr = formatDuration(stats.estimatedTimeRemaining * 60);
-                    etaStr = `**Remaining:** ~${durationStr}`;
+                    etaStr = `$(history) **Remaining:** ~${durationStr}`;
                 }
 
                 const separator = (speedStr && etaStr) ? ' • ' : '';
