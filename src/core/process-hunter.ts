@@ -18,18 +18,60 @@ export class ProcessHunter {
     private platform: NodeJS.Platform;
     private logger: ILogger;
 
-    // Regex patterns for extracting connection details
-    private static readonly TOKEN_REGEX = /--csrf_token[=\s]+([a-f0-9-]+)/i; // Looking for csrf_token
-    // Legacy support
-    private static readonly AUTH_TOKEN_REGEX = /--auth-token[=\s]+([^\s]+)/i;
-    private static readonly PORT_REGEX = /--api-port[=\s]+(\d+)/i;
-    private static readonly EXT_PORT_REGEX = /--extension_server_port[=\s]+(\d+)/i;
+    private verificationPaths: string[];
+    private verificationTimeoutMs: number;
 
-    constructor(logger: ILogger, processPatterns: string[] = ['antigravity', 'language_server', 'gemini-ls', 'gemini-code']) {
+    private static readonly MAX_DIAGNOSTIC_CANDIDATES = 30;
+
+    // Regex patterns for extracting connection details
+    private static readonly TOKEN_REGEX = /--csrf[_-]?token(?:=|\s)+([^\s"']+)/i;
+    private static readonly AUTH_TOKEN_REGEX = /--auth[_-]?token(?:=|\s)+([^\s"']+)/i;
+    private static readonly PORT_REGEX = /--api[_-]?port(?:=|\s)+(\d+)/i;
+    private static readonly EXT_PORT_REGEX = /--extension[_-]?server[_-]?port(?:=|\s)+(\d+)/i;
+
+    private static readonly DEFAULT_VERIFICATION_PATHS = [
+        '/exa.language_server_pb.LanguageServerService/GetUserStatus',
+        '/exa.language_server_pb.LanguageServerService/GetUnleashData'
+    ];
+
+    constructor(
+        logger: ILogger,
+        processPatterns: string[] = ['antigravity', 'language_server', 'gemini-ls', 'gemini-code'],
+        verificationPaths: string[] = ProcessHunter.DEFAULT_VERIFICATION_PATHS,
+        verificationTimeoutMs: number = 3500
+    ) {
         this.processPatterns = processPatterns.map(p => p.toLowerCase());
         this.platform = os.platform();
         this.logger = logger;
+        this.verificationPaths = this.normalizeVerificationPaths(verificationPaths);
+        this.verificationTimeoutMs = verificationTimeoutMs;
         this.logger.info(`ProcessHunter initialized for platform: ${this.platform}`);
+    }
+
+    private normalizeVerificationPaths(paths: string[]): string[] {
+        const result: string[] = [];
+
+        for (const rawPath of paths) {
+            if (!rawPath) {
+                continue;
+            }
+
+            const trimmed = rawPath.trim();
+            if (!trimmed) {
+                continue;
+            }
+
+            const normalized = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+            if (!result.includes(normalized)) {
+                result.push(normalized);
+            }
+        }
+
+        if (result.length > 0) {
+            return result;
+        } else {
+            return [...ProcessHunter.DEFAULT_VERIFICATION_PATHS];
+        }
     }
 
     /**
@@ -61,6 +103,90 @@ export class ProcessHunter {
             this.logger.error('Process hunt failed', error);
             return null;
         }
+    }
+
+    /**
+     * Diagnostics helper: runs a verbose process scan and logs why connection detection may fail.
+     * This never shows any UI popups; it only writes to the extension output channel.
+     */
+    public async diagnose(): Promise<void> {
+        const start = Date.now();
+
+        this.logger.info('Diagnostics: starting process scan...');
+        this.logger.info(`Diagnostics: platform=${this.platform}`);
+        this.logger.info(`Diagnostics: processPatterns=${JSON.stringify(this.processPatterns)}`);
+        this.logger.info(`Diagnostics: verificationPaths=${JSON.stringify(this.verificationPaths)}`);
+        this.logger.info(`Diagnostics: verificationTimeoutMs=${this.verificationTimeoutMs}`);
+
+        let processes: ProcessInfo[] = [];
+        try {
+            processes = await this.scanProcesses();
+        } catch (error) {
+            this.logger.error('Diagnostics: scanProcesses threw an error', error);
+            return;
+        }
+
+        this.logger.info(`Diagnostics: totalProcesses=${processes.length}`);
+
+        const candidates = processes.filter(p => this.matchesPattern(p));
+        this.logger.info(`Diagnostics: candidates=${candidates.length}`);
+
+        if (candidates.length === 0) {
+            this.logger.warn('Diagnostics: no candidate processes matched patterns. Try adjusting antigravity-hud.processPatterns.');
+        }
+
+        const limitedCandidates = candidates.slice(0, ProcessHunter.MAX_DIAGNOSTIC_CANDIDATES);
+        if (candidates.length > limitedCandidates.length) {
+            this.logger.warn(`Diagnostics: showing first ${limitedCandidates.length} candidates (truncated from ${candidates.length})`);
+        }
+
+        for (const proc of limitedCandidates) {
+            await this.diagnoseCandidate(proc);
+        }
+
+        const elapsedMs = Date.now() - start;
+        this.logger.info(`Diagnostics: finished in ${elapsedMs}ms`);
+    }
+
+    private async diagnoseCandidate(proc: ProcessInfo): Promise<void> {
+        this.logger.info(`Diagnostics: candidate PID=${proc.pid}, name=${proc.name}`);
+
+        const cmdLine = proc.commandLine;
+        const token = this.extractToken(cmdLine);
+
+        if (!token) {
+            this.logger.warn('Diagnostics: token not found in command line (this candidate will be ignored during normal detection)');
+            return;
+        } else {
+            this.logger.info(`Diagnostics: token=${this.maskSecret(token)}`);
+        }
+
+        const candidatePorts = await this.collectCandidatePorts(proc.pid, cmdLine, true);
+        if (candidatePorts.length === 0) {
+            this.logger.warn('Diagnostics: no candidate ports found (neither args nor lsof)');
+            return;
+        } else {
+            this.logger.info(`Diagnostics: ports=${candidatePorts.join(', ')}`);
+        }
+
+        for (const port of candidatePorts) {
+            const results = await this.verifyConnectionDetailed(port, token);
+            const ok = results.some(r => r.ok);
+
+            if (ok) {
+                const okPaths = results.filter(r => r.ok).map(r => r.path).join(', ');
+                this.logger.info(`Diagnostics: port ${port} verified OK on ${okPaths}`);
+                return;
+            } else {
+                for (const r of results) {
+                    const status = r.statusCode ? `status=${r.statusCode}` : 'status=none';
+                    const err = r.error ? `error=${r.error}` : 'error=none';
+                    this.logger.info(`Diagnostics: port ${port} path=${r.path} ok=false ${status} ${err}`);
+                }
+            }
+        }
+
+        this.logger.warn('Diagnostics: candidate had token/ports but none verified; likely apiPath mismatch or local endpoint not reachable');
     }
 
     /**
@@ -201,16 +327,7 @@ export class ProcessHunter {
         const cmdLine = proc.commandLine;
 
         // 1. Find Token (Priority: csrf_token -> auth-token)
-        let token = '';
-        const csrfMatch = cmdLine.match(ProcessHunter.TOKEN_REGEX);
-        if (csrfMatch) {
-            token = csrfMatch[1];
-        } else {
-            const authMatch = cmdLine.match(ProcessHunter.AUTH_TOKEN_REGEX);
-            if (authMatch) {
-                token = authMatch[1];
-            }
-        }
+        const token = this.extractToken(cmdLine);
 
         if (!token) {
             // Very common for processes to match name but not have token (e.g. helper processes), so just debug
@@ -219,29 +336,7 @@ export class ProcessHunter {
         }
 
         // 2. Collect Candidate Ports
-        const candidatePorts: number[] = [];
-
-        // Priority 1: Extension Server Port (often the right one for IDEs)
-        const extPortMatch = cmdLine.match(ProcessHunter.EXT_PORT_REGEX);
-        if (extPortMatch) candidatePorts.push(parseInt(extPortMatch[1], 10));
-
-        // Priority 2: Standard API Port
-        const portMatch = cmdLine.match(ProcessHunter.PORT_REGEX);
-        if (portMatch) candidatePorts.push(parseInt(portMatch[1], 10));
-
-        // Priority 3: Scan lsof if needed (only if no explicit ports or on deep scan)
-        // We always scan if we have a token but no args, or just to be safe if args failed?
-        // Let's stick to adding them if arguments found nothing, or as supplements.
-        if (this.platform === 'darwin' || this.platform === 'linux') {
-            try {
-                const lsofPorts = await this.findPortsByPid(proc.pid);
-                lsofPorts.forEach(p => {
-                    if (!candidatePorts.includes(p)) candidatePorts.push(p);
-                });
-            } catch (err) {
-                this.logger.debug(`lsof failed for PID ${proc.pid}`, err);
-            }
-        }
+        const candidatePorts = await this.collectCandidatePorts(proc.pid, cmdLine, false);
 
         if (candidatePorts.length === 0) {
             this.logger.debug(`No ports found (args or lsof) for PID ${proc.pid}`);
@@ -275,15 +370,8 @@ export class ProcessHunter {
      */
     private async findPortsByPid(pid: number): Promise<number[]> {
         try {
-            let cmd = '';
-            // Try lsof first
-            if (this.platform === 'darwin') {
-                cmd = `lsof -iTCP -sTCP:LISTEN -n -P | grep -E "^\\S+\\s+${pid}\\s"`;
-            } else {
-                cmd = `lsof -iTCP -sTCP:LISTEN -n -P | grep -E "^\\S+\\s+${pid}\\s"`;
-            }
-
-            const { stdout } = await execAsync(cmd);
+            const cmd = `lsof -n -P -a -p ${pid} -iTCP -sTCP:LISTEN`;
+            const { stdout } = await execAsync(cmd, { maxBuffer: 10 * 1024 * 1024 });
             const ports: number[] = [];
             const lines = stdout.split('\n');
 
@@ -305,43 +393,155 @@ export class ProcessHunter {
         }
     }
 
+    private async findPortsByPidVerbose(pid: number): Promise<number[]> {
+        try {
+            return await this.findPortsByPid(pid);
+        } catch (error) {
+            this.logger.warn(`Diagnostics: lsof lookup failed for PID ${pid}`, error);
+            return [];
+        }
+    }
+
     /**
      * Verify connection using the specific API endpoint
      */
-    private verifyConnection(port: number, token: string): Promise<boolean> {
+    private async verifyConnection(port: number, token: string): Promise<boolean> {
+        for (const path of this.verificationPaths) {
+            const ok = await this.verifyConnectionOnPath(port, token, path);
+            if (ok) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private async verifyConnectionDetailed(port: number, token: string): Promise<Array<{ path: string; ok: boolean; statusCode?: number; error?: string }>> {
+        const results: Array<{ path: string; ok: boolean; statusCode?: number; error?: string }> = [];
+
+        for (const path of this.verificationPaths) {
+            const result = await this.verifyConnectionOnPathDetailed(port, token, path);
+            results.push(result);
+        }
+
+        return results;
+    }
+
+    private verifyConnectionOnPath(port: number, token: string, path: string): Promise<boolean> {
+        return this.verifyConnectionOnPathDetailed(port, token, path).then(r => r.ok);
+    }
+
+    private verifyConnectionOnPathDetailed(
+        port: number,
+        token: string,
+        path: string
+    ): Promise<{ path: string; ok: boolean; statusCode?: number; error?: string }> {
         return new Promise(resolve => {
             const options: https.RequestOptions = {
                 hostname: '127.0.0.1',
-                port: port,
-                path: '/exa.language_server_pb.LanguageServerService/GetUnleashData',
+                port,
+                path,
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-Codeium-Csrf-Token': token,
                     'Connect-Protocol-Version': '1'
                 },
-                timeout: 2000,
+                timeout: this.verificationTimeoutMs,
                 rejectUnauthorized: false
             };
 
             const req = https.request(options, (res) => {
-                this.logger.debug(`Verification request to port ${port} returned status ${res.statusCode}`);
-                resolve(res.statusCode === 200);
+                this.logger.debug(`Verification request to ${path} on port ${port} returned status ${res.statusCode}`);
+                res.resume();
+                resolve({ path, ok: res.statusCode === 200, statusCode: res.statusCode });
             });
 
             req.on('error', (err) => {
-                this.logger.debug(`Verification error on port ${port}: ${err.message}`);
-                resolve(false);
+                this.logger.debug(`Verification error on ${path} port ${port}: ${err.message}`);
+                resolve({ path, ok: false, error: err.message });
             });
 
             req.on('timeout', () => {
                 req.destroy();
-                resolve(false);
+                resolve({ path, ok: false, error: 'timeout' });
             });
 
-            req.write(JSON.stringify({ wrapper_data: {} }));
+            req.write(JSON.stringify({
+                wrapper_data: {},
+                metadata: {
+                    ide_name: 'antigravity',
+                    extension_name: 'antigravity',
+                    locale: 'en'
+                }
+            }));
             req.end();
         });
+    }
+
+    private extractToken(commandLine: string): string {
+        const csrfMatch = commandLine.match(ProcessHunter.TOKEN_REGEX);
+        if (csrfMatch) {
+            return csrfMatch[1];
+        } else {
+            const authMatch = commandLine.match(ProcessHunter.AUTH_TOKEN_REGEX);
+            if (authMatch) {
+                return authMatch[1];
+            } else {
+                return '';
+            }
+        }
+    }
+
+    private maskSecret(secret: string): string {
+        if (secret.length <= 8) {
+            return '***';
+        }
+
+        const prefix = secret.slice(0, 4);
+        const suffix = secret.slice(-4);
+        return `${prefix}...${suffix}`;
+    }
+
+    private async collectCandidatePorts(pid: number, commandLine: string, verbose: boolean): Promise<number[]> {
+        const candidatePorts: number[] = [];
+
+        const extPortMatch = commandLine.match(ProcessHunter.EXT_PORT_REGEX);
+        if (extPortMatch) {
+            const extPort = parseInt(extPortMatch[1], 10);
+            if (!isNaN(extPort)) {
+                candidatePorts.push(extPort);
+            }
+        }
+
+        const portMatch = commandLine.match(ProcessHunter.PORT_REGEX);
+        if (portMatch) {
+            const apiPort = parseInt(portMatch[1], 10);
+            if (!isNaN(apiPort) && !candidatePorts.includes(apiPort)) {
+                candidatePorts.push(apiPort);
+            }
+        }
+
+        if (this.platform === 'darwin' || this.platform === 'linux') {
+            const lsofPorts = verbose
+                ? await this.findPortsByPidVerbose(pid)
+                : await this.findPortsByPid(pid);
+
+            for (const p of lsofPorts) {
+                if (!candidatePorts.includes(p)) {
+                    candidatePorts.push(p);
+                }
+            }
+        }
+
+        return candidatePorts.filter(p => p > 0);
+    }
+
+    /**
+     * Update the API paths used during connection verification
+     */
+    setVerificationPaths(paths: string[]): void {
+        this.verificationPaths = this.normalizeVerificationPaths(paths);
+        this.logger.debug(`Verification paths updated: ${this.verificationPaths.join(', ')}`);
     }
 
     /**

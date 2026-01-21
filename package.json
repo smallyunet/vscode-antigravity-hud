@@ -2,7 +2,7 @@
   "name": "vscode-antigravity-hud",
   "displayName": "Antigravity HUD",
   "description": "Lightweight monitoring for Google Antigravity AI IDE model usage quota",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "smallyu",
   "icon": "images/logo.png",
   "repository": {
@@ -30,6 +30,10 @@
         "title": "Antigravity HUD: Refresh"
       },
       {
+        "command": "antigravity-hud.diagnostics",
+        "title": "Antigravity HUD: Diagnostics"
+      },
+      {
         "command": "antigravity-hud.selectModel",
         "title": "Antigravity HUD: Select Model"
       }
@@ -47,6 +51,7 @@
           "type": "array",
           "default": [
             "antigravity",
+            "language_server",
             "gemini-ls",
             "gemini-code"
           ],

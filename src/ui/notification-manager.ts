@@ -34,48 +34,8 @@ export class NotificationManager {
      * Check for low quota and notify user
      */
     checkLowQuota(quota: QuotaResponse): void {
-        if (!this.enableNotifications) {
-            return;
-        }
-
-        // Group models by percentage
-        const modelsByPercentage = new Map<number, import('../types').ModelQuota[]>();
-
-        for (const model of quota.models) {
-            if (model.limit <= 0) continue;
-
-            const percentage = Math.round((model.remaining / model.limit) * 100);
-
-            if (percentage <= this.lowQuotaThreshold) {
-                if (!this.hasNotifiedLowQuota.has(model.modelId)) {
-                    const group = modelsByPercentage.get(percentage) || [];
-                    group.push(model);
-                    modelsByPercentage.set(percentage, group);
-                }
-            }
-        }
-
-        // Send notifications for each group
-        for (const [percentage, models] of modelsByPercentage) {
-            const modelNames = models.map(m => m.modelName).join(', ');
-            const isPlural = models.length > 1;
-            const message = `Antigravity Warning: ${modelNames} ${isPlural ? 'are' : 'is'} low on quota (${percentage}% remaining).`;
-
-            vscode.window.showWarningMessage(
-                message,
-                'Show Details'
-            ).then(selection => {
-                if (selection === 'Show Details') {
-                    this.showDetailsCallback();
-                }
-            });
-
-            // Mark all as notified
-            for (const model of models) {
-                this.hasNotifiedLowQuota.add(model.modelId);
-                logger.info(`Low quota notification sent for ${model.modelName} (${percentage}%)`);
-            }
-        }
+        // Notifications disabled - never show popup warnings for quota
+        return;
     }
 
     /**

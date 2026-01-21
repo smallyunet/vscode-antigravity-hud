@@ -23,7 +23,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const config = getConfiguration();
 
     // Initialize components
-    processHunter = new ProcessHunter(logger, config.processPatterns);
+    processHunter = new ProcessHunter(logger, config.processPatterns, buildVerificationPaths(config.apiPath));
     quotaPoller = new QuotaPoller(logger, config.pollingInterval, config.apiPath);
     connectionManager = new ConnectionManager(processHunter, quotaPoller, logger);
     statisticsManager = new StatisticsManager(context);
@@ -55,6 +55,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         () => connectionManager.refresh()
     );
 
+    const diagnosticsCmd = vscode.commands.registerCommand(
+        'antigravity-hud.diagnostics',
+        async () => {
+            logger.show();
+            await processHunter.diagnose();
+        }
+    );
+
     const selectModelCmd = vscode.commands.registerCommand(
         'antigravity-hud.selectModel',
         () => statusBarManager.selectModel()
@@ -71,6 +79,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         showQuotaCmd,
         refreshCmd,
+        diagnosticsCmd,
         selectModelCmd,
         configWatcher,
         { dispose: () => cleanup() }
@@ -82,6 +91,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     logger.info('Antigravity HUD activated');
 }
 
+function buildVerificationPaths(configuredApiPath: string): string[] {
+    return [
+        configuredApiPath,
+        '/exa.language_server_pb.LanguageServerService/GetUserStatus',
+        '/exa.language_server_pb.LanguageServerService/GetUnleashData'
+    ];
+}
+
 /**
  * Get extension configuration
  */
@@ -89,7 +106,7 @@ function getConfiguration(): ExtensionConfig {
     const config = vscode.workspace.getConfiguration('antigravity-hud');
     return {
         pollingInterval: config.get<number>('pollingInterval', 60),
-        processPatterns: config.get<string[]>('processPatterns', ['antigravity', 'gemini-ls', 'gemini-code']),
+        processPatterns: config.get<string[]>('processPatterns', ['antigravity', 'language_server', 'gemini-ls', 'gemini-code']),
         apiPath: config.get<string>('apiPath', '/exa.language_server_pb.LanguageServerService/GetUnleashData'),
         lowQuotaThreshold: config.get<number>('lowQuotaThreshold', 20),
         enableNotifications: config.get<boolean>('enableNotifications', true)
@@ -104,6 +121,7 @@ function handleConfigurationChange(): void {
 
     logger.info('Configuration changed, updating...');
     processHunter.setProcessPatterns(config.processPatterns);
+    processHunter.setVerificationPaths(buildVerificationPaths(config.apiPath));
     quotaPoller.setPollingInterval(config.pollingInterval);
     quotaPoller.setApiPath(config.apiPath);
     statusBarManager.updateConfig(config.lowQuotaThreshold, config.enableNotifications);

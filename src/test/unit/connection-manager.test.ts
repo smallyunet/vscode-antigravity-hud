@@ -16,7 +16,7 @@ class MockLogger implements ILogger {
 }
 
 class MockProcessHunter extends ProcessHunter {
-    constructor(logger: ILogger) { super(logger, []); }
+    constructor(logger: ILogger) { super(logger, [], ['/exa.language_server_pb.LanguageServerService/GetUserStatus']); }
     huntResult: AntigravityConnection | null = null;
     huntCalled = 0;
 
