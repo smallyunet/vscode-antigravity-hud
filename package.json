@@ -2,7 +2,7 @@
   "name": "vscode-antigravity-hud",
   "displayName": "Antigravity HUD",
   "description": "Lightweight monitoring for Google Antigravity AI IDE model usage quota",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "publisher": "smallyu",
   "icon": "images/logo.png",
   "repository": {
@@ -71,8 +71,22 @@
         },
         "antigravity-hud.enableNotifications": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "Enable low quota notifications"
+        },
+        "antigravity-hud.logQuotaUpdates": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log quota updates to the output channel (can be noisy)"
+        },
+        "antigravity-hud.tooltipStatusStyle": {
+          "type": "string",
+          "enum": [
+            "battery",
+            "traffic"
+          ],
+          "default": "battery",
+          "description": "Status column style in hover tooltip (battery bars or traffic-light dots)"
         }
       }
     }

@@ -89,6 +89,8 @@ export interface ExtensionConfig {
     apiPath: string;
     lowQuotaThreshold: number;
     enableNotifications: boolean;
+    logQuotaUpdates: boolean;
+    tooltipStatusStyle: 'battery' | 'traffic';
 }
 
 export interface ModelStatistics {

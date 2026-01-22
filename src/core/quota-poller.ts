@@ -19,6 +19,9 @@ export class QuotaPoller extends EventEmitter {
     private logger: ILogger;
 
     private apiPath: string;
+    private fallbackApiPaths: string[] = [];
+    private inFlight: boolean = false;
+    private logQuotaUpdates: boolean = false;
 
     constructor(logger: ILogger, pollingIntervalSeconds: number = 60, apiPath: string = '/exa.language_server_pb.LanguageServerService/GetUserStatus') {
         super();
@@ -26,6 +29,40 @@ export class QuotaPoller extends EventEmitter {
         this.pollingInterval = pollingIntervalSeconds * 1000;
         this.apiPath = apiPath;
         this.logger.info(`QuotaPoller initialized with ${pollingIntervalSeconds}s interval, path: ${apiPath}`);
+    }
+
+    /**
+     * Provide fallback API paths to try when the configured apiPath fails.
+     */
+    setFallbackApiPaths(paths: string[]): void {
+        const normalized: string[] = [];
+
+        for (const rawPath of paths) {
+            if (!rawPath) {
+                continue;
+            }
+
+            const trimmed = rawPath.trim();
+            if (!trimmed) {
+                continue;
+            }
+
+            const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+            if (!normalized.includes(withLeadingSlash)) {
+                normalized.push(withLeadingSlash);
+            }
+        }
+
+        this.fallbackApiPaths = normalized;
+        this.logger.debug(`Fallback API paths updated: ${JSON.stringify(this.fallbackApiPaths)}`);
+    }
+
+    /**
+     * Enable or disable verbose quota logging.
+     */
+    setLogQuotaUpdates(enabled: boolean): void {
+        this.logQuotaUpdates = enabled;
+        this.logger.info(`Quota update logging ${enabled ? 'enabled' : 'disabled'}`);
     }
 
     /**
@@ -87,80 +124,166 @@ export class QuotaPoller extends EventEmitter {
             return;
         }
 
+        if (this.inFlight) {
+            this.logger.debug('Poll skipped: previous request still in-flight');
+            return;
+        }
+
+        this.inFlight = true;
+
         try {
-            // Use https module directly to handle self-signed certs easily
-            const options = {
-                hostname: '127.0.0.1',
-                port: this.connection.port,
-                path: this.apiPath,
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Codeium-Csrf-Token': this.connection.csrfToken || this.connection.token,
-                    'Connect-Protocol-Version': '1',
-                },
-                rejectUnauthorized: false,
-                timeout: 10000
-            };
-
-            this.logger.debug(`Polling quota from port ${this.connection.port}`);
-
-            const data = await new Promise<any>((resolve, reject) => {
-                const req = https.request(options, (res) => {
-                    if (res.statusCode !== 200) {
-                        reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
-                        return;
-                    }
-
-                    let body = '';
-                    res.on('data', chunk => body += chunk);
-                    res.on('end', () => {
-                        try {
-                            resolve(JSON.parse(body));
-                        } catch (e) {
-                            reject(e);
-                        }
-                    });
-                });
-
-                req.on('error', reject);
-                req.on('timeout', () => {
-                    req.destroy();
-                    reject(new Error('Request timed out'));
-                });
-
-                req.write(JSON.stringify({
-                    wrapper_data: {},
-                    metadata: {
-                        ide_name: 'antigravity',
-                        extension_name: 'antigravity',
-                        locale: 'en'
-                    }
-                }));
-                req.end();
-            });
-
-            this.logger.debug('Quota API response received', { size: JSON.stringify(data).length });
-
-
-            const quota = parseQuotaResponse(data);
+            const quota = await this.pollWithFallbacks();
             this.lastQuota = quota;
 
-            // Log the quota update for user verification (requests by user)
-            if (quota.models.length > 0) {
-                const modelLog = quota.models.map(m => {
-                    const pct = m.limit > 0 ? ((m.remaining / m.limit) * 100).toFixed(2) : '0.00';
-                    return `    ${m.modelName.padEnd(30)} : ${pct}%`;
-                }).join('\n');
-                this.logger.info(`Quota Update:\n${modelLog}`);
-            }
+            this.logQuotaUpdateIfEnabled(quota);
 
             this.emitUpdate(quota);
 
         } catch (error) {
             this.logger.error('Poll failed', error);
             this.emitUpdate(null, error as Error);
+        } finally {
+            this.inFlight = false;
         }
+    }
+
+    private async pollWithFallbacks(): Promise<QuotaResponse> {
+        const pathsToTry = this.getPathsToTry();
+
+        let lastError: Error | null = null;
+
+        for (const path of pathsToTry) {
+            const result = await this.fetchQuota(path);
+
+            if (result.ok) {
+                if (path !== this.apiPath) {
+                    this.apiPath = path;
+                    this.logger.info(`API path auto-switched to ${path}`);
+                }
+                return result.quota;
+            }
+
+            lastError = result.error;
+
+            if (result.isPathRelatedError) {
+                continue;
+            } else {
+                break;
+            }
+        }
+
+        if (lastError) {
+            throw lastError;
+        }
+
+        throw new Error('Poll failed: no usable API paths');
+    }
+
+    private getPathsToTry(): string[] {
+        const paths: string[] = [];
+
+        if (this.apiPath && this.apiPath.trim()) {
+            const primary = this.apiPath.startsWith('/') ? this.apiPath : `/${this.apiPath}`;
+            paths.push(primary);
+        }
+
+        for (const p of this.fallbackApiPaths) {
+            if (!paths.includes(p)) {
+                paths.push(p);
+            }
+        }
+
+        return paths;
+    }
+
+    private async fetchQuota(path: string): Promise<{ ok: true; quota: QuotaResponse } | { ok: false; error: Error; isPathRelatedError: boolean }> {
+        if (!this.connection) {
+            return { ok: false, error: new Error('No connection available'), isPathRelatedError: false };
+        }
+
+        const options = {
+            hostname: '127.0.0.1',
+            port: this.connection.port,
+            path,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Codeium-Csrf-Token': this.connection.csrfToken || this.connection.token,
+                'Connect-Protocol-Version': '1'
+            },
+            rejectUnauthorized: false,
+            timeout: 10000
+        };
+
+        this.logger.debug(`Polling quota from port ${this.connection.port} path=${path}`);
+
+        const response = await new Promise<{ statusCode?: number; statusMessage?: string; body: string }>((resolve, reject) => {
+            const req = https.request(options, (res) => {
+                let body = '';
+                res.on('data', chunk => body += chunk);
+                res.on('end', () => {
+                    resolve({ statusCode: res.statusCode, statusMessage: res.statusMessage, body });
+                });
+            });
+
+            req.on('error', reject);
+            req.on('timeout', () => {
+                req.destroy();
+                reject(new Error('Request timed out'));
+            });
+
+            req.write(JSON.stringify({
+                wrapper_data: {},
+                metadata: {
+                    ide_name: 'antigravity',
+                    extension_name: 'antigravity',
+                    locale: 'en'
+                }
+            }));
+            req.end();
+        });
+
+        if (response.statusCode !== 200) {
+            const status = response.statusCode ? response.statusCode.toString() : 'unknown';
+            const message = response.statusMessage ? response.statusMessage : 'unknown';
+            const error = new Error(`HTTP ${status}: ${message}`);
+
+            const isPathRelatedError = response.statusCode === 404 || response.statusCode === 405 || response.statusCode === 501;
+            return { ok: false, error, isPathRelatedError };
+        }
+
+        let data: any;
+        try {
+            data = JSON.parse(response.body);
+        } catch (e) {
+            const error = new Error('Failed to parse JSON response');
+            return { ok: false, error, isPathRelatedError: true };
+        }
+
+        try {
+            const quota = parseQuotaResponse(data);
+            return { ok: true, quota };
+        } catch (e) {
+            const error = new Error('Failed to parse quota response');
+            return { ok: false, error, isPathRelatedError: true };
+        }
+    }
+
+    private logQuotaUpdateIfEnabled(quota: QuotaResponse): void {
+        if (!this.logQuotaUpdates) {
+            return;
+        }
+
+        if (quota.models.length === 0) {
+            return;
+        }
+
+        const modelLog = quota.models.map(m => {
+            const pct = m.limit > 0 ? ((m.remaining / m.limit) * 100).toFixed(2) : '0.00';
+            return `    ${m.modelName.padEnd(30)} : ${pct}%`;
+        }).join('\n');
+
+        this.logger.info(`Quota Update:\n${modelLog}`);
     }
 
     /**

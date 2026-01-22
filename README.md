@@ -42,7 +42,9 @@ Antigravity HUD now does more than just show numbers. It analyzes your usage pat
 ### Quota Display Characteristics
 
 > [!NOTE]
-> In recent versions of the Antigravity editor, model usage quota is reported in 20% increments (buckets). To accurately reflect this, the HUD displays usage as ranges (e.g., `80-100%`, `60-80%`) for these models. This provides a more realistic view of your remaining capacity when precise counts are unavailable.
+> In recent versions of the Antigravity editor, model usage quota is reported in 20% increments (buckets).
+> The status bar may display these models as ranges (e.g., `80-100%`, `60-80%`) when exact counts are not available.
+> The hover tooltip can also show a 5-bar "battery" indicator for an at-a-glance view.
 
 To view detailed statistics, click the status bar item and select a specific model from the list.
 
@@ -78,7 +80,9 @@ You can customize the extension's behavior in VS Code Settings:
 | `antigravity-hud.pollingInterval` | `60` | How often to fetch quota data (in seconds). |
 | `antigravity-hud.processPatterns` | `["antigravity", "gemini-ls", "gemini-code"]` | Process names to scan for API credentials. |
 | `antigravity-hud.lowQuotaThreshold` | `20` | Threshold percentage for low quota warnings. |
-| `antigravity-hud.enableNotifications` | `true` | Enable or disable low quota desktop notifications. |
+| `antigravity-hud.enableNotifications` | `false` | Enable or disable low quota desktop notifications. |
+| `antigravity-hud.tooltipStatusStyle` | `battery` | Status column style in hover tooltip (`battery` or `traffic`). |
+| `antigravity-hud.logQuotaUpdates` | `false` | Log detailed quota updates to the output channel (noisy). |
 
 ## How It Works
 

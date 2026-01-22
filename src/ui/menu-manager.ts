@@ -135,7 +135,7 @@ export class MenuManager {
      * Show detailed statistics for a specific model
      */
     async showModelStatistics(model: ModelQuota, selectedModelId: string | null): Promise<void> {
-        const stats = this.statsManager.getModelStats(model.modelId);
+        const stats = this.statsManager.getModelStats(model.modelId, !!model.isLikelyBucketed);
 
         const items: vscode.QuickPickItem[] = [];
 

@@ -25,9 +25,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Initialize components
     processHunter = new ProcessHunter(logger, config.processPatterns, buildVerificationPaths(config.apiPath));
     quotaPoller = new QuotaPoller(logger, config.pollingInterval, config.apiPath);
+    quotaPoller.setFallbackApiPaths(buildVerificationPaths(config.apiPath));
+    quotaPoller.setLogQuotaUpdates(config.logQuotaUpdates);
     connectionManager = new ConnectionManager(processHunter, quotaPoller, logger);
     statisticsManager = new StatisticsManager(context);
-    statusBarManager = new StatusBarManager(context, statisticsManager, config.lowQuotaThreshold, config.enableNotifications);
+    statusBarManager = new StatusBarManager(
+        context,
+        statisticsManager,
+        config.lowQuotaThreshold,
+        config.enableNotifications,
+        config.tooltipStatusStyle
+    );
 
     // Wire up quota updates to status bar and stats manager
     quotaPoller.on('update', (event: QuotaUpdateEvent) => {
@@ -107,9 +115,11 @@ function getConfiguration(): ExtensionConfig {
     return {
         pollingInterval: config.get<number>('pollingInterval', 60),
         processPatterns: config.get<string[]>('processPatterns', ['antigravity', 'language_server', 'gemini-ls', 'gemini-code']),
-        apiPath: config.get<string>('apiPath', '/exa.language_server_pb.LanguageServerService/GetUnleashData'),
+        apiPath: config.get<string>('apiPath', '/exa.language_server_pb.LanguageServerService/GetUserStatus'),
         lowQuotaThreshold: config.get<number>('lowQuotaThreshold', 20),
-        enableNotifications: config.get<boolean>('enableNotifications', true)
+        enableNotifications: config.get<boolean>('enableNotifications', false),
+        logQuotaUpdates: config.get<boolean>('logQuotaUpdates', false),
+        tooltipStatusStyle: config.get<'battery' | 'traffic'>('tooltipStatusStyle', 'battery')
     };
 }
 
@@ -124,7 +134,9 @@ function handleConfigurationChange(): void {
     processHunter.setVerificationPaths(buildVerificationPaths(config.apiPath));
     quotaPoller.setPollingInterval(config.pollingInterval);
     quotaPoller.setApiPath(config.apiPath);
-    statusBarManager.updateConfig(config.lowQuotaThreshold, config.enableNotifications);
+    quotaPoller.setFallbackApiPaths(buildVerificationPaths(config.apiPath));
+    quotaPoller.setLogQuotaUpdates(config.logQuotaUpdates);
+    statusBarManager.updateConfig(config.lowQuotaThreshold, config.enableNotifications, config.tooltipStatusStyle);
 
     // Trigger a refresh on config change to ensure we use new settings if needed
     connectionManager.refresh();

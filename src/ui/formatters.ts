@@ -123,6 +123,25 @@ export function getColorForPercentage(percentage: number): string | vscode.Theme
 }
 
 /**
+ * Get battery-style bar display based on quota percentage
+ * Maps quota buckets (0, 20, 40, 60, 80, 100) to 5-bar battery display
+ * Examples: 100% -> ▮▮▮▮▮, 80% -> ▮▮▮▮▯, 60% -> ▮▮▮▯▯, etc.
+ */
+export function getBatteryBar(percentage: number): string {
+    const normalized = Math.max(0, Math.min(100, percentage));
+
+    // Determine number of filled bars (0-5)
+    const filledBars = Math.max(0, Math.min(5, Math.round(normalized / 20)));
+    const emptyBars = 5 - filledBars;
+    
+    // Use block characters for battery display
+    const filled = '▮'.repeat(filledBars);
+    const empty = '▯'.repeat(emptyBars);
+    
+    return filled + empty;
+}
+
+/**
  * Get icon for QuickPick based on model quota
  */
 export function getQuickPickIcon(model: ModelQuota): string {

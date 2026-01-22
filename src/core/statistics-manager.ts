@@ -122,28 +122,18 @@ export class StatisticsManager {
     /**
      * Get calculated statistics for a model
      */
-    getModelStats(modelId: string): ModelStatistics | null {
+    getModelStats(modelId: string, isLikelyBucketed: boolean = false): ModelStatistics | null {
         const stored = this.stats[modelId];
         if (!stored) return null;
 
         const now = Date.now();
 
-        // Calculate Speed (% per hour)
-        // ... (rest of the method unchanged)
         let speed = 0;
-        if (stored.history.length >= 2) {
-            // Look at the window of history we have
-            const start = stored.history[0];
-            const end = stored.history[stored.history.length - 1];
-            const timeDiffHours = (end.timestamp - start.timestamp) / (1000 * 3600);
 
-            if (timeDiffHours > 0.05) { // Need at least ~3 mins of data
-                const percentDiff = start.percent - end.percent;
-                // Only count consumption (positive drop)
-                if (percentDiff > 0) {
-                    speed = percentDiff / timeDiffHours;
-                }
-            }
+        if (isLikelyBucketed) {
+            speed = this.calculateBucketedSpeed(stored.history);
+        } else {
+            speed = this.calculateContinuousSpeed(stored.history);
         }
 
         // Estimated Time Remaining
@@ -168,5 +158,87 @@ export class StatisticsManager {
             consumptionSpeed: speed,
             estimatedTimeRemaining: eta
         };
+    }
+
+    private calculateContinuousSpeed(history: { timestamp: number; percent: number }[]): number {
+        if (history.length < 2) {
+            return 0;
+        } else {
+            // proceed
+        }
+
+        const start = history[0];
+        const end = history[history.length - 1];
+        const timeDiffHours = (end.timestamp - start.timestamp) / (1000 * 3600);
+
+        if (timeDiffHours <= 0.05) {
+            return 0;
+        } else {
+            // proceed
+        }
+
+        const percentDiff = start.percent - end.percent;
+        if (percentDiff <= 0) {
+            return 0;
+        } else {
+            return percentDiff / timeDiffHours;
+        }
+    }
+
+    private calculateBucketedSpeed(history: { timestamp: number; percent: number }[]): number {
+        if (history.length < 2) {
+            return 0;
+        } else {
+            // proceed
+        }
+
+        const dropEvents: { timestamp: number; delta: number }[] = [];
+
+        for (let i = 1; i < history.length; i++) {
+            const prev = history[i - 1];
+            const curr = history[i];
+            const delta = prev.percent - curr.percent;
+
+            if (delta > 0.1 && delta < 50) {
+                dropEvents.push({ timestamp: curr.timestamp, delta });
+            } else {
+                // ignore (no change or reset)
+            }
+        }
+
+        // Prefer multiple drop events for stability.
+        if (dropEvents.length >= 2) {
+            const first = dropEvents[0];
+            const last = dropEvents[dropEvents.length - 1];
+
+            const timeDiffHours = (last.timestamp - first.timestamp) / (1000 * 3600);
+            if (timeDiffHours <= 0.05) {
+                return 0;
+            } else {
+                // proceed
+            }
+
+            const totalDrop = dropEvents.reduce((sum, e) => sum + e.delta, 0);
+            if (totalDrop <= 0) {
+                return 0;
+            } else {
+                return totalDrop / timeDiffHours;
+            }
+        } else {
+            // Fallback: use the entire observation window, but require a minimum time window
+            const start = history[0];
+            const end = history[history.length - 1];
+            const timeDiffHours = (end.timestamp - start.timestamp) / (1000 * 3600);
+            const percentDiff = start.percent - end.percent;
+
+            // Need at least ~15 minutes and at least one bucket drop to show a speed.
+            if (timeDiffHours < 0.25) {
+                return 0;
+            } else if (percentDiff < 15) {
+                return 0;
+            } else {
+                return percentDiff / timeDiffHours;
+            }
+        }
     }
 }

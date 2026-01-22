@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { QuotaResponse, QuotaUpdateEvent } from '../types';
 import { logger } from '../utils/logger';
 import { StatisticsManager } from '../core/statistics-manager';
-import { formatPercentage, formatPercentageDisplay, formatQuotaText, formatTime, formatResetTime, formatAbsoluteTime, getIconForPercentage, getColorForPercentage, getBackgroundColorForPercentage, formatDuration } from './formatters';
+import { formatPercentage, formatPercentageDisplay, formatQuotaText, formatTime, formatResetTime, formatAbsoluteTime, getIconForPercentage, getColorForPercentage, getBackgroundColorForPercentage, formatDuration, getBatteryBar } from './formatters';
 import { NotificationManager } from './notification-manager';
 import { MenuManager } from './menu-manager';
 
@@ -19,6 +19,9 @@ export class StatusBarManager {
     private selectedModelId: string | null = null;
     private static readonly KEY_SELECTED_MODEL = 'antigravity-hud.selectedModelId';
 
+    private lastErrorMessage: string | null = null;
+    private tooltipStatusStyle: 'battery' | 'traffic' = 'battery';
+
     // Components
     private notificationManager: NotificationManager;
     private menuManager: MenuManager;
@@ -28,10 +31,12 @@ export class StatusBarManager {
         context: vscode.ExtensionContext,
         statsManager: StatisticsManager,
         lowQuotaThreshold: number = 20,
-        enableNotifications: boolean = true
+        enableNotifications: boolean = false,
+        tooltipStatusStyle: 'battery' | 'traffic' = 'battery'
     ) {
         this.context = context;
         this.statsManager = statsManager;
+        this.tooltipStatusStyle = tooltipStatusStyle;
 
         // Restore selected model
         this.selectedModelId = this.context.globalState.get<string | null>(StatusBarManager.KEY_SELECTED_MODEL, null);
@@ -67,11 +72,12 @@ export class StatusBarManager {
     update(event: QuotaUpdateEvent): void {
         if (event.error) {
             this.connectionStatus = 'error';
-            this.currentQuota = null;
+            this.lastErrorMessage = event.error.message;
             logger.debug('Status bar updated with error state');
         } else if (event.quota) {
             this.connectionStatus = 'connected';
             this.currentQuota = event.quota;
+            this.lastErrorMessage = null;
             this.notificationManager.checkLowQuota(event.quota);
             logger.debug('Status bar updated with new quota data');
         }
@@ -110,12 +116,21 @@ export class StatusBarManager {
     /**
      * Update configuration
      */
-    updateConfig(lowQuotaThreshold: number, enableNotifications: boolean): void {
+    updateConfig(lowQuotaThreshold: number, enableNotifications: boolean): void;
+    updateConfig(lowQuotaThreshold: number, enableNotifications: boolean, tooltipStatusStyle: 'battery' | 'traffic'): void;
+    updateConfig(lowQuotaThreshold: number, enableNotifications: boolean, tooltipStatusStyle?: 'battery' | 'traffic'): void {
         this.notificationManager.updateConfig(lowQuotaThreshold, enableNotifications);
 
-        // Re-check quota with new settings
+        if (tooltipStatusStyle) {
+            this.tooltipStatusStyle = tooltipStatusStyle;
+        } else {
+            // keep current
+        }
+
         if (this.currentQuota) {
             this.notificationManager.recheck(this.currentQuota);
+        } else {
+            // no-op
         }
 
         this.updateDisplay();
@@ -146,28 +161,13 @@ export class StatusBarManager {
     private formatDisplay(): { text: string; tooltip: string | vscode.MarkdownString; color: string | vscode.ThemeColor | undefined; backgroundColor: vscode.ThemeColor | undefined } {
         switch (this.connectionStatus) {
             case 'disconnected':
-                return {
-                    text: '$(circle-slash) AG: --',
-                    tooltip: 'Antigravity HUD: Not connected. Click to retry.',
-                    color: undefined,
-                    backgroundColor: undefined
-                };
+                return this.formatDisconnectedDisplay();
 
             case 'connecting':
-                return {
-                    text: '$(sync~spin) AG: ...',
-                    tooltip: 'Antigravity HUD: Connecting...',
-                    color: undefined,
-                    backgroundColor: undefined
-                };
+                return this.formatConnectingDisplay();
 
             case 'error':
-                return {
-                    text: '$(warning) AG: ERR',
-                    tooltip: 'Antigravity HUD: Connection error. Click for details.',
-                    color: new vscode.ThemeColor('statusBarItem.errorForeground'),
-                    backgroundColor: new vscode.ThemeColor('statusBarItem.errorBackground')
-                };
+                return this.formatErrorDisplay();
 
             case 'connected':
                 if (!this.currentQuota || this.currentQuota.models.length === 0) {
@@ -203,11 +203,103 @@ export class StatusBarManager {
 
                 return {
                     text: `${icon} AG: ${displayPercent}`,
-                    tooltip: this.formatTooltip(),
+                    tooltip: this.formatTooltip(this.connectionStatus),
                     color,
                     backgroundColor
                 };
         }
+    }
+
+    private formatDisconnectedDisplay(): { text: string; tooltip: string | vscode.MarkdownString; color: string | vscode.ThemeColor | undefined; backgroundColor: vscode.ThemeColor | undefined } {
+        if (this.currentQuota && this.currentQuota.models.length > 0) {
+            const overallPercentage = this.calculateOverallPercentage();
+            const displayPercent = this.getDisplayPercent(overallPercentage);
+            return {
+                text: `$(circle-slash) AG: ${displayPercent}`,
+                tooltip: this.formatTooltip('disconnected'),
+                color: undefined,
+                backgroundColor: undefined
+            };
+        } else {
+            return {
+                text: '$(circle-slash) AG: --',
+                tooltip: 'Antigravity HUD: Not connected. Click to retry.',
+                color: undefined,
+                backgroundColor: undefined
+            };
+        }
+    }
+
+    private formatConnectingDisplay(): { text: string; tooltip: string | vscode.MarkdownString; color: string | vscode.ThemeColor | undefined; backgroundColor: vscode.ThemeColor | undefined } {
+        if (this.currentQuota && this.currentQuota.models.length > 0) {
+            const overallPercentage = this.calculateOverallPercentage();
+            const displayPercent = this.getDisplayPercent(overallPercentage);
+            return {
+                text: `$(sync~spin) AG: ${displayPercent}`,
+                tooltip: this.formatTooltip('connecting'),
+                color: undefined,
+                backgroundColor: undefined
+            };
+        } else {
+            return {
+                text: '$(sync~spin) AG: ...',
+                tooltip: 'Antigravity HUD: Connecting...',
+                color: undefined,
+                backgroundColor: undefined
+            };
+        }
+    }
+
+    private formatErrorDisplay(): { text: string; tooltip: string | vscode.MarkdownString; color: string | vscode.ThemeColor | undefined; backgroundColor: vscode.ThemeColor | undefined } {
+        if (this.currentQuota && this.currentQuota.models.length > 0) {
+            const overallPercentage = this.calculateOverallPercentage();
+            const displayPercent = this.getDisplayPercent(overallPercentage);
+
+            return {
+                text: `$(warning) AG: ${displayPercent}`,
+                tooltip: this.formatTooltip('error'),
+                color: new vscode.ThemeColor('statusBarItem.errorForeground'),
+                backgroundColor: new vscode.ThemeColor('statusBarItem.errorBackground')
+            };
+        } else {
+            return {
+                text: '$(warning) AG: ERR',
+                tooltip: 'Antigravity HUD: Connection error. Click for details.',
+                color: new vscode.ThemeColor('statusBarItem.errorForeground'),
+                backgroundColor: new vscode.ThemeColor('statusBarItem.errorBackground')
+            };
+        }
+    }
+
+    private getDisplayPercent(overallPercentage: number): string {
+        let displayPercent = `${overallPercentage}%`;
+
+        if (!this.currentQuota || this.currentQuota.models.length === 0) {
+            return displayPercent;
+        } else {
+            // proceed
+        }
+
+        const activeModelId = this.statsManager.getMostRecentlyConsumedModelId() || this.selectedModelId;
+        if (activeModelId) {
+            const model = this.currentQuota.models.find(m => m.modelId === activeModelId);
+            if (model) {
+                displayPercent = formatPercentageDisplay(model);
+            } else {
+                // keep fallback
+            }
+        } else {
+            if (this.currentQuota.models.length > 0) {
+                const lowestModel = this.currentQuota.models.reduce((prev, curr) =>
+                    formatPercentage(curr) < formatPercentage(prev) ? curr : prev
+                );
+                displayPercent = formatPercentageDisplay(lowestModel);
+            } else {
+                // keep fallback
+            }
+        }
+
+        return displayPercent;
     }
 
     /**
@@ -243,7 +335,7 @@ export class StatusBarManager {
     /**
      * Format detailed tooltip text using Markdown
      */
-    private formatTooltip(): vscode.MarkdownString {
+    private formatTooltip(status: 'disconnected' | 'connecting' | 'connected' | 'error'): vscode.MarkdownString {
         const md = new vscode.MarkdownString();
         md.isTrusted = true;
         md.supportThemeIcons = true;
@@ -253,6 +345,8 @@ export class StatusBarManager {
             md.appendText('Antigravity HUD: No data');
             return md;
         }
+
+        this.appendConnectionBanner(md, status);
 
         // Header with User Tier
         if (this.currentQuota.userTier) {
@@ -283,9 +377,9 @@ export class StatusBarManager {
         for (const model of sortedModels) {
             const percent = formatPercentage(model);
 
-            let statusIcon = '🟢';
-            if (percent <= 20) statusIcon = '🔴';
-            else if (percent <= 50) statusIcon = '🟡';
+            const statusCell = this.tooltipStatusStyle === 'battery'
+                ? getBatteryBar(percent)
+                : this.getTrafficLightStatus(percent);
 
             // Mark recommended models
             let displayModelName = model.modelName;
@@ -306,8 +400,7 @@ export class StatusBarManager {
                 resetStr += ` (${formatResetTime(model.resetAt)})`;
             }
 
-            // Status icon in middle column
-            md.appendMarkdown(`| **${displayModelName}** | ${statusIcon} | ${remainingStr} | ${resetStr} |\n`);
+            md.appendMarkdown(`| **${displayModelName}** | ${statusCell} | ${remainingStr} | ${resetStr} |\n`);
         }
 
         md.appendMarkdown('\n---\n');
@@ -341,7 +434,7 @@ export class StatusBarManager {
 
         // Add stats for target model
         if (targetModel) {
-            const stats = this.statsManager.getModelStats(targetModel.modelId);
+            const stats = this.statsManager.getModelStats(targetModel.modelId, !!targetModel.isLikelyBucketed);
             if (stats && (stats.consumptionSpeed > 0 || stats.estimatedTimeRemaining)) {
 
                 const speed = Math.round(stats.consumptionSpeed);
@@ -366,6 +459,45 @@ export class StatusBarManager {
         md.appendMarkdown(`$(clock) **Last updated:** ${formatTime(this.currentQuota.lastUpdated)}`);
 
         return md;
+    }
+
+    private appendConnectionBanner(md: vscode.MarkdownString, status: 'disconnected' | 'connecting' | 'connected' | 'error'): void {
+        const ageMs = Date.now() - this.currentQuota!.lastUpdated.getTime();
+        const ageMinutes = Math.max(0, Math.floor(ageMs / 60000));
+        const staleHint = ageMinutes > 0 ? ` (cached ${ageMinutes}m ago)` : '';
+
+        if (status === 'connected') {
+            return;
+        } else {
+            // proceed
+        }
+
+        if (status === 'connecting') {
+            md.appendMarkdown(`> $(sync~spin) **Connecting...**${staleHint}\n\n`);
+            return;
+        } else {
+            // proceed
+        }
+
+        if (status === 'disconnected') {
+            md.appendMarkdown(`> $(circle-slash) **Disconnected.**${staleHint}\n\n`);
+            return;
+        } else {
+            // proceed
+        }
+
+        const errorText = this.lastErrorMessage ? ` ${this.lastErrorMessage}` : '';
+        md.appendMarkdown(`> $(warning) **Connection error.**${staleHint}${errorText}\n\n`);
+    }
+
+    private getTrafficLightStatus(percent: number): string {
+        if (percent <= 20) {
+            return '🔴';
+        } else if (percent <= 50) {
+            return '🟡';
+        } else {
+            return '🟢';
+        }
     }
 
     /**
