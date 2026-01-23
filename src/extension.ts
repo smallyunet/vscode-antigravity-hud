@@ -45,11 +45,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // Wire up connection status updates
     connectionManager.on('statusChange', (event: ConnectionStatusEvent) => {
-        statusBarManager.setConnectionStatus(event.status);
-        if (event.message && event.status === 'error') {
-            // Optionally show error toast if needed, but logging + status bar is usually enough
-            // status bar tooltip update could be good, but StatusBarManager needs an update for that
-        }
+        statusBarManager.setConnectionStatus(event.status, event.message);
     });
 
     // Register commands
@@ -76,6 +72,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         () => statusBarManager.selectModel()
     );
 
+    const clearMonitoredModelCmd = vscode.commands.registerCommand(
+        'antigravity-hud.clearMonitoredModel',
+        () => statusBarManager.clearMonitoredModel()
+    );
+
+    const resetStatisticsCmd = vscode.commands.registerCommand(
+        'antigravity-hud.resetStatistics',
+        () => statusBarManager.resetStatistics()
+    );
+
     // Listen for configuration changes
     const configWatcher = vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('antigravity-hud')) {
@@ -89,6 +95,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         refreshCmd,
         diagnosticsCmd,
         selectModelCmd,
+        clearMonitoredModelCmd,
+        resetStatisticsCmd,
         configWatcher,
         { dispose: () => cleanup() }
     );
@@ -149,6 +157,7 @@ function cleanup(): void {
     logger.info('Cleaning up Antigravity HUD...');
 
     connectionManager.disconnect();
+    statisticsManager.dispose();
     statusBarManager.dispose();
     logger.dispose();
 }

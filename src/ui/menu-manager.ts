@@ -7,14 +7,20 @@ import { logger } from '../utils/logger';
 export class MenuManager {
     private statsManager: StatisticsManager;
     private onSetModel: (modelId: string | null) => void;
+    private onClearMonitoredModel: () => void;
+    private onResetStatistics: () => void;
     private onShowQuota: () => void; // Callback to re-show main menu (back button)
 
     constructor(
         statsManager: StatisticsManager,
-        onSetModel: (modelId: string | null) => void
+        onSetModel: (modelId: string | null) => void,
+        onClearMonitoredModel: () => void,
+        onResetStatistics: () => void
     ) {
         this.statsManager = statsManager;
         this.onSetModel = onSetModel;
+        this.onClearMonitoredModel = onClearMonitoredModel;
+        this.onResetStatistics = onResetStatistics;
         this.onShowQuota = () => { }; // Initial dummy
     }
 
@@ -64,6 +70,16 @@ export class MenuManager {
             description: 'Choose which model to show in Status Bar'
         });
 
+        items.push({
+            label: '$(circle-slash) Clear Monitored Model',
+            description: 'Switch status bar back to Auto (Lowest Quota)'
+        });
+
+        items.push({
+            label: '$(trash) Reset Statistics',
+            description: 'Clear usage history and speed estimates'
+        });
+
         const selected = await vscode.window.showQuickPick(items, {
             title: 'Antigravity HUD - Model Quotas',
             placeHolder: 'Select an item for more info'
@@ -73,6 +89,12 @@ export class MenuManager {
             vscode.commands.executeCommand('antigravity-hud.refresh');
         } else if (selected?.label === '$(settings) Select Monitored Model') {
             this.selectModel(quota, selectedModelId);
+        } else if (selected?.label === '$(circle-slash) Clear Monitored Model') {
+            this.onClearMonitoredModel();
+            this.onShowQuota();
+        } else if (selected?.label === '$(trash) Reset Statistics') {
+            this.onResetStatistics();
+            this.onShowQuota();
         } else if (selected) {
             // Find selected model
             const selectedModel = quota.models.find(m =>

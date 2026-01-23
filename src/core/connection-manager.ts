@@ -22,6 +22,7 @@ export class ConnectionManager extends EventEmitter {
     private quotaPoller: QuotaPoller;
     private logger: ILogger;
     private status: ConnectionStatus = 'disconnected';
+    private statusMessage: string | undefined = undefined;
 
     // Retry configuration
     private retryCount: number = 0;
@@ -148,10 +149,18 @@ export class ConnectionManager extends EventEmitter {
     }
 
     private setStatus(status: ConnectionStatus, message?: string): void {
-        if (this.status !== status) {
-            this.status = status;
-            this.emit('statusChange', { status, message });
+        const normalizedMessage = message || undefined;
+
+        const statusChanged = this.status !== status;
+        const messageChanged = this.statusMessage !== normalizedMessage;
+
+        if (!statusChanged && !messageChanged) {
+            return;
         }
+
+        this.status = status;
+        this.statusMessage = normalizedMessage;
+        this.emit('statusChange', { status, message: normalizedMessage });
     }
 
     public getStatus(): ConnectionStatus {

@@ -261,7 +261,7 @@ export class QuotaPoller extends EventEmitter {
         }
 
         try {
-            const quota = parseQuotaResponse(data);
+            const quota = parseQuotaResponse(data, this.logger);
             return { ok: true, quota };
         } catch (e) {
             const error = new Error('Failed to parse quota response');

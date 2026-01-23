@@ -2,7 +2,7 @@
   "name": "vscode-antigravity-hud",
   "displayName": "Antigravity HUD",
   "description": "Lightweight monitoring for Google Antigravity AI IDE model usage quota",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "publisher": "smallyu",
   "icon": "images/logo.png",
   "repository": {
@@ -36,6 +36,14 @@
       {
         "command": "antigravity-hud.selectModel",
         "title": "Antigravity HUD: Select Model"
+      },
+      {
+        "command": "antigravity-hud.clearMonitoredModel",
+        "title": "Antigravity HUD: Clear Monitored Model"
+      },
+      {
+        "command": "antigravity-hud.resetStatistics",
+        "title": "Antigravity HUD: Reset Statistics"
       }
     ],
     "configuration": {

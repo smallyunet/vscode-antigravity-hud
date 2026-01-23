@@ -7,7 +7,6 @@ interface StoredModelStats {
     last100Time?: number; // timestamp
     history: { timestamp: number; percent: number }[];
     lastUpdateTimestamp: number;
-    lastConsumptionTime?: number;
 }
 
 export class StatisticsManager {
@@ -16,6 +15,10 @@ export class StatisticsManager {
     private stats: { [modelId: string]: StoredModelStats } = {};
     // Max history items to store (e.g. 1 sample per minute * 60 minutes = 1 hour history for speed calc)
     private static readonly MAX_HISTORY_ITEMS = 60;
+
+    private saveTimer: NodeJS.Timeout | null = null;
+    private savePending: boolean = false;
+    private static readonly SAVE_DEBOUNCE_MS = 5000;
 
     constructor(context: vscode.ExtensionContext) {
         this.context = context;
@@ -28,15 +31,35 @@ export class StatisticsManager {
         logger.debug(`Loaded stats for ${Object.keys(this.stats).length} models`);
     }
 
-    private saveStats() {
-        this.context.globalState.update(StatisticsManager.KEY_STATS, this.stats);
+    private scheduleSave(): void {
+        this.savePending = true;
+
+        if (this.saveTimer) {
+            return;
+        }
+
+        this.saveTimer = setTimeout(() => {
+            this.saveTimer = null;
+            this.flushSave();
+        }, StatisticsManager.SAVE_DEBOUNCE_MS);
+    }
+
+    private flushSave(): void {
+        if (!this.savePending) {
+            return;
+        }
+
+        this.savePending = false;
+        void this.context.globalState.update(StatisticsManager.KEY_STATS, this.stats);
     }
 
     /**
      * Update stats based on new quota data
      */
     processQuotaUpdate(quota: QuotaResponse | null) {
-        if (!quota) return;
+        if (!quota) {
+            return;
+        }
 
         const now = Date.now();
         let changed = false;
@@ -45,6 +68,8 @@ export class StatisticsManager {
             const modelId = model.modelId;
             let modelStats = this.stats[modelId];
 
+            let modelChanged = false;
+
             if (!modelStats) {
                 modelStats = {
                     totalUsageTime: 0,
@@ -52,21 +77,11 @@ export class StatisticsManager {
                     lastUpdateTimestamp: now
                 };
                 this.stats[modelId] = modelStats;
+                modelChanged = true;
             }
 
             // Calculate percentage
             const percent = model.limit > 0 ? (model.remaining / model.limit) * 100 : 0;
-
-            // Track consumption (if percent dropped)
-            // Check previous percent from history or last update
-            const lastPercent = modelStats.history.length > 0
-                ? modelStats.history[modelStats.history.length - 1].percent
-                : percent;
-
-            // If percent dropped (and reasonable drop, not a reset from 0 to 100)
-            if (percent < lastPercent && (lastPercent - percent) < 50) {
-                modelStats.lastConsumptionTime = now;
-            }
 
             // Update Total Usage Time
             // We only add time if the gap is reasonable (e.g. < 5 mins). 
@@ -74,12 +89,16 @@ export class StatisticsManager {
             const timeSinceLastUpdate = (now - modelStats.lastUpdateTimestamp) / 1000;
             if (timeSinceLastUpdate < 300 && timeSinceLastUpdate > 0) {
                 modelStats.totalUsageTime += timeSinceLastUpdate;
+                modelChanged = true;
             }
 
             // Update Last 100% Time
             // If currently near 100%, reset timestamp
             if (percent >= 99.9) {
-                modelStats.last100Time = now;
+                if (modelStats.last100Time !== now) {
+                    modelStats.last100Time = now;
+                    modelChanged = true;
+                }
             }
 
             // Update History (Circular Buffer)
@@ -92,31 +111,46 @@ export class StatisticsManager {
                 if (modelStats.history.length > StatisticsManager.MAX_HISTORY_ITEMS) {
                     modelStats.history.shift();
                 }
+                modelChanged = true;
             }
 
             modelStats.lastUpdateTimestamp = now;
-            changed = true;
+
+            if (modelChanged) {
+                changed = true;
+            }
         }
 
         if (changed) {
-            this.saveStats();
+            this.scheduleSave();
         }
     }
 
     /**
-     * Get the model ID that was most recently consumed
+     * Clear all stored statistics.
      */
-    getMostRecentlyConsumedModelId(): string | null {
-        let lastTime = 0;
-        let modelId = null;
+    async reset(): Promise<void> {
+        this.stats = {};
 
-        for (const [id, stat] of Object.entries(this.stats)) {
-            if (stat.lastConsumptionTime && stat.lastConsumptionTime > lastTime) {
-                lastTime = stat.lastConsumptionTime;
-                modelId = id;
-            }
+        if (this.saveTimer) {
+            clearTimeout(this.saveTimer);
+            this.saveTimer = null;
         }
-        return modelId;
+
+        this.savePending = false;
+        await this.context.globalState.update(StatisticsManager.KEY_STATS, this.stats);
+    }
+
+    /**
+     * Flush pending saves and stop timers.
+     */
+    dispose(): void {
+        if (this.saveTimer) {
+            clearTimeout(this.saveTimer);
+            this.saveTimer = null;
+        }
+
+        this.flushSave();
     }
 
     /**

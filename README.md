@@ -23,7 +23,7 @@ Antigravity HUD automatically detects your local Antigravity instance and displa
 ## ✨ Features
 
 - 🎯 **Zero Configuration**: Automatically hunts for Antigravity editor and Language Server processes to find your API port and token.
-- ⚡ **Auto-Detection**: Intelligently detects and displays the model you are currently using.
+- ⚡ **Monitored Model**: Optionally choose a model to pin in the status bar (defaults to the lowest quota across models).
 - 📉 **Usage Statistics**: Tracks consumption speed (% per hour) and estimates remaining time for each model.
 - 📊 **Real-Time Monitoring**: Polls the local API to keep your quota information up-to-date.
 - 💎 **Unobtrusive UI**: A minimal `AG: XX%` indicator sits in your status bar, with a rich hover tooltip.
@@ -36,7 +36,7 @@ Antigravity HUD now does more than just show numbers. It analyzes your usage pat
 
 - **Consumption Speed**: See how fast you're using each model's quota (e.g., `~120%/h`).
 - **Estimated Time Remaining**: Know exactly how many minutes or hours of usage you have left at your current pace.
-- **Active Model Tracking**: The status bar automatically switches to show the model generating activity.
+- **Monitored Model**: Pin a specific model in the status bar, or keep the default (lowest quota across models).
 - **Usage History**: Tracks total time spent using each model across sessions.
 
 ### Quota Display Characteristics
@@ -90,13 +90,17 @@ Antigravity HUD works like a companion utility:
 1. **Process Hunting**: It scans your system for running Antigravity-related processes.
 2. **Credential Extraction**: It securely extracts the `--api-port` and `--auth-token` arguments from the running process.
 3. **API Polling**: It uses these credentials to query the local API and parse the response.
-4. **Calculations**: It processes updates to calculate consumption speed, usage time, and auto-detect activity.
-5. **Visual Feedback**: It displays the active or lowest model's quota in the status bar and provides detailed insights via hover and click.
+4. **Calculations**: It processes updates to calculate consumption speed and usage time.
+5. **Visual Feedback**: It displays the monitored model (or the lowest quota across models) in the status bar and provides detailed insights via hover and click.
 
 ## Commands
 
 - **Antigravity HUD: Show Quota**: Open the detailed quota information popup.
 - **Antigravity HUD: Refresh**: Force a re-scan of processes and refresh quota data.
+- **Antigravity HUD: Select Model**: Choose which model to show in the status bar (or Auto/Lowest).
+- **Antigravity HUD: Clear Monitored Model**: Switch status bar back to Auto (Lowest Quota).
+- **Antigravity HUD: Reset Statistics**: Clear usage history and speed estimates.
+- **Antigravity HUD: Diagnostics**: Print connection diagnostics in the output channel.
 
 ## 🤝 Contributing
 

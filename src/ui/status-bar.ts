@@ -20,6 +20,7 @@ export class StatusBarManager {
     private static readonly KEY_SELECTED_MODEL = 'antigravity-hud.selectedModelId';
 
     private lastErrorMessage: string | null = null;
+    private lastStatusMessage: string | null = null;
     private tooltipStatusStyle: 'battery' | 'traffic' = 'battery';
 
     // Components
@@ -50,7 +51,9 @@ export class StatusBarManager {
 
         this.menuManager = new MenuManager(
             statsManager,
-            (id) => this.setModelSelection(id)
+            (id) => this.setModelSelection(id),
+            () => { void this.clearMonitoredModel(); },
+            () => { void this.resetStatistics(); }
         );
 
         // Create status bar item
@@ -73,15 +76,28 @@ export class StatusBarManager {
         if (event.error) {
             this.connectionStatus = 'error';
             this.lastErrorMessage = event.error.message;
+            this.lastStatusMessage = null;
             logger.debug('Status bar updated with error state');
         } else if (event.quota) {
             this.connectionStatus = 'connected';
             this.currentQuota = event.quota;
             this.lastErrorMessage = null;
+            this.lastStatusMessage = null;
             this.notificationManager.checkLowQuota(event.quota);
             logger.debug('Status bar updated with new quota data');
         }
         this.updateDisplay();
+    }
+
+    async clearMonitoredModel(): Promise<void> {
+        await this.setModelSelection(null);
+        vscode.window.showInformationMessage('Antigravity HUD: Monitored model cleared (Auto).');
+    }
+
+    async resetStatistics(): Promise<void> {
+        await this.statsManager.reset();
+        this.updateDisplay();
+        vscode.window.showInformationMessage('Antigravity HUD: Statistics reset.');
     }
 
     /**
@@ -139,8 +155,16 @@ export class StatusBarManager {
     /**
      * Set connection status
      */
-    setConnectionStatus(status: 'disconnected' | 'connecting' | 'connected' | 'error'): void {
+    setConnectionStatus(status: 'disconnected' | 'connecting' | 'connected' | 'error', message?: string): void {
         this.connectionStatus = status;
+
+        if (status === 'error') {
+            this.lastErrorMessage = message || this.lastErrorMessage;
+            this.lastStatusMessage = null;
+        } else {
+            this.lastStatusMessage = message || null;
+        }
+
         this.updateDisplay();
     }
 
@@ -187,9 +211,8 @@ export class StatusBarManager {
 
                 // Use the primary model for more descriptive text if possible
                 let displayPercent = `${overallPercentage}%`;
-                const activeModelId = this.statsManager.getMostRecentlyConsumedModelId() || this.selectedModelId;
-                if (activeModelId) {
-                    const model = this.currentQuota.models.find(m => m.modelId === activeModelId);
+                if (this.selectedModelId) {
+                    const model = this.currentQuota.models.find(m => m.modelId === this.selectedModelId);
                     if (model) {
                         displayPercent = formatPercentageDisplay(model);
                     }
@@ -276,27 +299,18 @@ export class StatusBarManager {
 
         if (!this.currentQuota || this.currentQuota.models.length === 0) {
             return displayPercent;
-        } else {
-            // proceed
         }
 
-        const activeModelId = this.statsManager.getMostRecentlyConsumedModelId() || this.selectedModelId;
-        if (activeModelId) {
-            const model = this.currentQuota.models.find(m => m.modelId === activeModelId);
+        if (this.selectedModelId) {
+            const model = this.currentQuota.models.find(m => m.modelId === this.selectedModelId);
             if (model) {
                 displayPercent = formatPercentageDisplay(model);
-            } else {
-                // keep fallback
             }
-        } else {
-            if (this.currentQuota.models.length > 0) {
-                const lowestModel = this.currentQuota.models.reduce((prev, curr) =>
-                    formatPercentage(curr) < formatPercentage(prev) ? curr : prev
-                );
-                displayPercent = formatPercentageDisplay(lowestModel);
-            } else {
-                // keep fallback
-            }
+        } else if (this.currentQuota.models.length > 0) {
+            const lowestModel = this.currentQuota.models.reduce((prev, curr) =>
+                formatPercentage(curr) < formatPercentage(prev) ? curr : prev
+            );
+            displayPercent = formatPercentageDisplay(lowestModel);
         }
 
         return displayPercent;
@@ -318,16 +332,7 @@ export class StatusBarManager {
             }
         }
 
-        // 2. Try to find the most recently used model
-        const activeModelId = this.statsManager.getMostRecentlyConsumedModelId();
-        if (activeModelId) {
-            const activeModel = this.currentQuota.models.find(m => m.modelId === activeModelId);
-            if (activeModel) {
-                return formatPercentage(activeModel);
-            }
-        }
-
-        // 3. Fallback: Use minimum percentage across all models (most restrictive)
+        // 2. Fallback: Use minimum percentage across all models (most restrictive)
         const percentages = this.currentQuota.models.map(m => formatPercentage(m));
         return Math.min(...percentages);
     }
@@ -417,19 +422,9 @@ export class StatusBarManager {
                 md.appendMarkdown(`$(verified) **Monitored Model:** ${targetModel.modelName} (${formatPercentageDisplay(targetModel)})\n\n`);
             }
         } else {
-            // Check for active model
-            const activeModelId = this.statsManager.getMostRecentlyConsumedModelId();
-            if (activeModelId) {
-                targetModel = this.currentQuota.models.find(m => m.modelId === activeModelId);
-            }
-
-            if (targetModel) {
-                md.appendMarkdown(`$(zap) **Active Model:** ${targetModel.modelName} (${formatPercentageDisplay(targetModel)})\n\n`);
-            } else {
-                // Fallback to lowest
-                md.appendMarkdown(`$(info) **Status Bar displays:** Lowest quota across all models (${formatPercentageDisplay(lowestModel)})\n\n`);
-                targetModel = lowestModel;
-            }
+            // Fallback to lowest
+            md.appendMarkdown(`$(info) **Status Bar displays:** Lowest quota across all models (${formatPercentageDisplay(lowestModel)})\n\n`);
+            targetModel = lowestModel;
         }
 
         // Add stats for target model
@@ -473,14 +468,16 @@ export class StatusBarManager {
         }
 
         if (status === 'connecting') {
-            md.appendMarkdown(`> $(sync~spin) **Connecting...**${staleHint}\n\n`);
+            const message = this.lastStatusMessage ? ` ${this.lastStatusMessage}` : '';
+            md.appendMarkdown(`> $(sync~spin) **Connecting...**${staleHint}${message}\n\n`);
             return;
         } else {
             // proceed
         }
 
         if (status === 'disconnected') {
-            md.appendMarkdown(`> $(circle-slash) **Disconnected.**${staleHint}\n\n`);
+            const message = this.lastStatusMessage ? ` ${this.lastStatusMessage}` : '';
+            md.appendMarkdown(`> $(circle-slash) **Disconnected.**${staleHint}${message}\n\n`);
             return;
         } else {
             // proceed

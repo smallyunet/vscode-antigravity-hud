@@ -1,9 +1,10 @@
 import { QuotaResponse, ModelQuota } from '../types';
+import { ILogger } from './interfaces';
 
 /**
  * Parse raw API response into QuotaResponse
  */
-export function parseQuotaResponse(data: any): QuotaResponse {
+export function parseQuotaResponse(data: any, logger?: ILogger): QuotaResponse {
     const models: ModelQuota[] = [];
 
     try {
@@ -121,11 +122,11 @@ export function parseQuotaResponse(data: any): QuotaResponse {
                 }
             }
         } else {
-            console.warn('Could not find model data in response. Full data:', JSON.stringify(data));
+            logger?.debug('QuotaParser: model data not found in response');
         }
 
     } catch (e) {
-        console.error('Error parsing quota response', e);
+        logger?.error('QuotaParser: failed to parse quota response', e);
     }
 
     // If no models found, create a placeholder based on what we saw
