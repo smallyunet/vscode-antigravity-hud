@@ -62,4 +62,33 @@ describe('QuotaParser', () => {
         const result = parseQuotaResponse({});
         expect(result.models[0].modelId).to.equal('unknown');
     });
+
+    it('should extract both client_model_configs and plan_status (AI Credits) simultaneously', () => {
+        const data = {
+            user_status: {
+                cascade_model_config_data: {
+                    client_model_configs: [
+                        {
+                            model_id: 'model-a',
+                            remaining: 50,
+                            limit: 100
+                        }
+                    ]
+                },
+                plan_status: {
+                    available_prompt_credits: 350,
+                    total_prompt_credits: 500,
+                    use_credits: true
+                }
+            }
+        };
+
+        const result = parseQuotaResponse(data);
+        expect(result.models).to.have.lengthOf(1);
+        expect(result.models[0].modelId).to.equal('model-a');
+        expect(result.aiCredits).to.not.be.undefined;
+        expect(result.aiCredits?.remaining).to.equal(350);
+        expect(result.aiCredits?.total).to.equal(500);
+        expect(result.aiCredits?.enabled).to.be.true;
+    });
 });

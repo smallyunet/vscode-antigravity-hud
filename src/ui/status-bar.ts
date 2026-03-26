@@ -392,20 +392,27 @@ export class StatusBarManager {
                 displayModelName = `★ ${displayModelName}`;
             }
 
+            // Highlight the monitored model
+            const isMonitored = this.selectedModelId === model.modelId;
+            const modelNameCell = isMonitored ? `**${displayModelName}**` : displayModelName;
+
             const remainingStr = formatQuotaText(model);
 
-            // Show Absolute Time (e.g. "18:15") and relative in parens if space allows, 
-            // but table cells wrap, so let's stick to Absolute + Relative tooltip? 
-            // Better: "18:15" with Relative in tooltip, or just "18:15" 
+            // Format Reset Time
             let resetStr = '-';
             if (model.resetAt) {
-                resetStr = formatAbsoluteTime(model.resetAt); // "18:15"
-                // Add relative time as part of the cell if expected to fit, or simple string concatenation
-                // md does not support cell tooltips easily.
-                resetStr += ` (${formatResetTime(model.resetAt)})`;
+                const diffHours = (model.resetAt.getTime() - Date.now()) / (1000 * 60 * 60);
+                if (diffHours > 24) {
+                    // For reset times > 24 hours, absolute time without date is confusing.
+                    // Just show relative time to save space.
+                    resetStr = formatResetTime(model.resetAt); // e.g., "103h 13m"
+                } else {
+                    // Fits well: e.g., "18:15 (4h 59m)"
+                    resetStr = `${formatAbsoluteTime(model.resetAt)} (${formatResetTime(model.resetAt)})`;
+                }
             }
 
-            md.appendMarkdown(`| **${displayModelName}** | ${statusCell} | ${remainingStr} | ${resetStr} |\n`);
+            md.appendMarkdown(`| ${modelNameCell} | ${statusCell} | ${remainingStr} | ${resetStr} |\n`);
         }
 
         md.appendMarkdown('\n---\n');
@@ -449,6 +456,19 @@ export class StatusBarManager {
                 const separator = (speedStr && etaStr) ? ' • ' : '';
                 md.appendMarkdown(`${speedStr}${separator}${etaStr}\n\n`);
             }
+        }
+
+        // Add AI Credits
+        if (this.currentQuota.aiCredits) {
+            const credits = this.currentQuota.aiCredits;
+            let creditStr = `$(zap) **AI Credits:** ${credits.remaining}`;
+            if (credits.total !== undefined) {
+                creditStr += ` / ${credits.total}`;
+            }
+            if (credits.enabled !== undefined) {
+                creditStr += credits.enabled ? ' (Active)' : ' (Disabled)';
+            }
+            md.appendMarkdown(`${creditStr}\n\n`);
         }
 
         md.appendMarkdown(`$(clock) **Last updated:** ${formatTime(this.currentQuota.lastUpdated)}`);

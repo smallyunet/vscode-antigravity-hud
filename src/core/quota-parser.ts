@@ -7,6 +7,28 @@ import { ILogger } from './interfaces';
 export function parseQuotaResponse(data: any, logger?: ILogger): QuotaResponse {
     const models: ModelQuota[] = [];
 
+    // Parse User Tier
+    let userTier: string | undefined = undefined;
+    if (data?.userStatus?.userTier?.name) {
+        userTier = data.userStatus.userTier.name;
+    } else if (data?.user_status?.userTier?.name) {
+        userTier = data.user_status.userTier.name;
+    }
+
+    // Parse AI Credits universally
+    let aiCredits;
+    const planStatus = data?.user_status?.plan_status || data?.userStatus?.planStatus;
+    if (planStatus) {
+        const remaining = planStatus.available_prompt_credits ?? planStatus.availablePromptCredits;
+        if (remaining !== undefined) {
+            aiCredits = {
+                remaining: Number(remaining),
+                total: planStatus.total_prompt_credits ?? planStatus.totalPromptCredits ? Number(planStatus.total_prompt_credits ?? planStatus.totalPromptCredits) : undefined,
+                enabled: planStatus.use_credits ?? planStatus.credits_enabled ?? planStatus.useCredits ?? planStatus.creditsEnabled
+            };
+        }
+    }
+
     try {
         let rawModels: any[] = [];
 
@@ -19,30 +41,19 @@ export function parseQuotaResponse(data: any, logger?: ILogger): QuotaResponse {
             rawModels = data.models;
         }
 
-        // 2. If no detailed models found, check for legacy "plan_status" credits
+        // 2. If no detailed models found, check for legacy "plan_status" credits to map as a fake model
         if (rawModels.length === 0) {
-            if (data?.user_status?.plan_status) {
-                const credits = data.user_status.plan_status.available_prompt_credits || 0;
+            if (aiCredits) {
                 return {
                     models: [{
                         modelId: 'credits',
                         modelName: 'Available Credits',
-                        remaining: credits,
-                        limit: 1000,
+                        remaining: aiCredits.remaining,
+                        limit: aiCredits.total || 1000,
                         resetAt: undefined
                     }],
-                    lastUpdated: new Date()
-                };
-            } else if (data?.userStatus?.planStatus) {
-                const credits = data.userStatus.planStatus.availablePromptCredits || 0;
-                return {
-                    models: [{
-                        modelId: 'credits',
-                        modelName: 'Available Credits',
-                        remaining: credits,
-                        limit: 1000,
-                        resetAt: undefined
-                    }],
+                    userTier,
+                    aiCredits,
                     lastUpdated: new Date()
                 };
             }
@@ -140,17 +151,10 @@ export function parseQuotaResponse(data: any, logger?: ILogger): QuotaResponse {
         });
     }
 
-    // Parse User Tier
-    let userTier: string | undefined = undefined;
-    if (data?.userStatus?.userTier?.name) {
-        userTier = data.userStatus.userTier.name;
-    } else if (data?.user_status?.userTier?.name) {
-        userTier = data.user_status.userTier.name;
-    }
-
     return {
         models,
         userTier,
+        aiCredits,
         lastUpdated: new Date()
     };
 }

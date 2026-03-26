@@ -63,12 +63,19 @@ export interface ModelQuota {
     isRecommended?: boolean;
 }
 
+export interface AiCredits {
+    remaining: number;
+    total?: number;
+    enabled?: boolean;
+}
+
 /**
  * Complete quota response from API
  */
 export interface QuotaResponse {
     models: ModelQuota[];
     userTier?: string;
+    aiCredits?: AiCredits;
     lastUpdated: Date;
 }
 
