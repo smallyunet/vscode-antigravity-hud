@@ -17,16 +17,41 @@ export function parseQuotaResponse(data: any, logger?: ILogger): QuotaResponse {
 
     // Parse AI Credits universally
     let aiCredits;
+    const codeAssistStatus = data?.code_assist_state || data?.codeAssistState || data?.user_status?.code_assist_state || data?.userStatus?.codeAssistState;
     const planStatus = data?.user_status?.plan_status || data?.userStatus?.planStatus;
-    if (planStatus) {
-        const remaining = planStatus.available_prompt_credits ?? planStatus.availablePromptCredits;
-        if (remaining !== undefined) {
-            aiCredits = {
-                remaining: Number(remaining),
-                total: planStatus.total_prompt_credits ?? planStatus.totalPromptCredits ? Number(planStatus.total_prompt_credits ?? planStatus.totalPromptCredits) : undefined,
-                enabled: planStatus.use_credits ?? planStatus.credits_enabled ?? planStatus.useCredits ?? planStatus.creditsEnabled
-            };
-        }
+    
+    // Antigravity's settings panel uses `availableCredits` & `useAICredits`. 
+    // They may exist in code_assist_state or at top/user_status levels, overriding legacy `available_prompt_credits`
+    const candidateRemaining = 
+        codeAssistStatus?.available_credits ?? codeAssistStatus?.availableCredits ??
+        planStatus?.available_credits ?? planStatus?.availableCredits ??
+        planStatus?.available_ai_credits ?? planStatus?.availableAiCredits ??
+        data?.user_status?.available_credits ?? data?.userStatus?.availableCredits ??
+        data?.available_credits ?? data?.availableCredits ??
+        planStatus?.available_prompt_credits ?? planStatus?.availablePromptCredits;
+
+    if (candidateRemaining !== undefined) {
+        const candidateTotal = 
+            codeAssistStatus?.total_credits ?? codeAssistStatus?.totalCredits ??
+            planStatus?.total_credits ?? planStatus?.totalCredits ??
+            planStatus?.total_ai_credits ?? planStatus?.totalAiCredits ??
+            data?.user_status?.total_credits ?? data?.userStatus?.totalCredits ??
+            data?.total_credits ?? data?.totalCredits ??
+            planStatus?.total_prompt_credits ?? planStatus?.totalPromptCredits;
+
+        const candidateEnabled = 
+            codeAssistStatus?.use_ai_credits ?? codeAssistStatus?.useAiCredits ??
+            planStatus?.use_ai_credits ?? planStatus?.useAiCredits ??
+            planStatus?.use_credits ?? planStatus?.useCredits ??
+            planStatus?.credits_enabled ?? planStatus?.creditsEnabled ??
+            data?.user_status?.use_ai_credits ?? data?.userStatus?.useAiCredits ??
+            data?.use_ai_credits ?? data?.useAiCredits;
+
+        aiCredits = {
+            remaining: Number(candidateRemaining),
+            total: candidateTotal !== undefined && candidateTotal !== null ? Number(candidateTotal) : undefined,
+            enabled: candidateEnabled !== undefined && candidateEnabled !== null ? Boolean(candidateEnabled) : undefined
+        };
     }
 
     try {
