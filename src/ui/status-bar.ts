@@ -360,10 +360,6 @@ export class StatusBarManager {
             md.appendMarkdown('### Antigravity HUD\n\n');
         }
 
-        // Table Header
-        md.appendMarkdown('| Model | Status | Quota | Reset |\n');
-        md.appendMarkdown('| :--- | :---: | :---: | :--- |\n');
-
         // Sort models: Recommended First -> High Quota -> Low Quota -> Name
         const sortedModels = [...this.currentQuota.models].sort((a, b) => {
             // 1. Recommended first
@@ -403,16 +399,14 @@ export class StatusBarManager {
             if (model.resetAt) {
                 const diffHours = (model.resetAt.getTime() - Date.now()) / (1000 * 60 * 60);
                 if (diffHours > 24) {
-                    // For reset times > 24 hours, absolute time without date is confusing.
-                    // Just show relative time to save space.
                     resetStr = formatResetTime(model.resetAt); // e.g., "103h 13m"
                 } else {
-                    // Fits well: e.g., "18:15 (4h 59m)"
                     resetStr = `${formatAbsoluteTime(model.resetAt)} (${formatResetTime(model.resetAt)})`;
                 }
             }
 
-            md.appendMarkdown(`| ${modelNameCell} | ${statusCell} | ${remainingStr} | ${resetStr} |\n`);
+            md.appendMarkdown(`${modelNameCell}\n\n`);
+            md.appendMarkdown(`> $(dashboard) ${remainingStr} &emsp; ${statusCell} &emsp; $(history) ${resetStr}\n\n`);
         }
 
         md.appendMarkdown('\n---\n');
