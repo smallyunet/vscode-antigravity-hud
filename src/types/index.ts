@@ -104,7 +104,5 @@ export interface ModelStatistics {
     totalUsageTime: number; // seconds
     usageSinceLast100: number; // seconds
     last100Time?: number; // timestamp
-    consumptionSpeed: number; // % per hour
-    estimatedTimeRemaining?: number; // minutes
     averageUsageTime?: number; // TBD
 }

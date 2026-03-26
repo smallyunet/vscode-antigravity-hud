@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { QuotaResponse, QuotaUpdateEvent } from '../types';
 import { logger } from '../utils/logger';
 import { StatisticsManager } from '../core/statistics-manager';
-import { formatPercentage, formatPercentageDisplay, formatQuotaText, formatTime, formatResetTime, formatAbsoluteTime, getIconForPercentage, getColorForPercentage, getBackgroundColorForPercentage, formatDuration, getBatteryBar } from './formatters';
+import { formatPercentage, formatPercentageDisplay, formatQuotaText, formatTime, formatResetTime, formatAbsoluteTime, getIconForPercentage, getColorForPercentage, getBackgroundColorForPercentage, getBatteryBar } from './formatters';
 import { NotificationManager } from './notification-manager';
 import { MenuManager } from './menu-manager';
 
@@ -405,8 +405,8 @@ export class StatusBarManager {
                 }
             }
 
-            md.appendMarkdown(`${modelNameCell}\n\n`);
-            md.appendMarkdown(`> $(dashboard) ${remainingStr} &emsp; ${statusCell} &emsp; $(history) ${resetStr}\n\n`);
+            md.appendMarkdown(`- ${modelNameCell}  \n`);
+            md.appendMarkdown(`  &nbsp;&nbsp;$(dashboard) ${remainingStr} &emsp; ${statusCell} &emsp; $(history) ${resetStr}\n\n`);
         }
 
         md.appendMarkdown('\n---\n');
@@ -428,29 +428,6 @@ export class StatusBarManager {
             targetModel = lowestModel;
         }
 
-        // Add stats for target model
-        if (targetModel) {
-            const stats = this.statsManager.getModelStats(targetModel.modelId, !!targetModel.isLikelyBucketed);
-            if (stats && (stats.consumptionSpeed > 0 || stats.estimatedTimeRemaining)) {
-
-                const speed = Math.round(stats.consumptionSpeed);
-                let speedStr = '';
-                let etaStr = '';
-
-                if (stats.consumptionSpeed > 0) {
-                    speedStr = `$(dashboard) **Speed:** ~${speed}%/h`;
-                }
-
-                if (stats.estimatedTimeRemaining) {
-                    // Convert minutes to seconds for formatDuration
-                    const durationStr = formatDuration(stats.estimatedTimeRemaining * 60);
-                    etaStr = `$(history) **Remaining:** ~${durationStr}`;
-                }
-
-                const separator = (speedStr && etaStr) ? ' • ' : '';
-                md.appendMarkdown(`${speedStr}${separator}${etaStr}\n\n`);
-            }
-        }
 
         // Add AI Credits
         if (this.currentQuota.aiCredits) {

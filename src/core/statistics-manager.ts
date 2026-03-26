@@ -5,7 +5,6 @@ import { logger } from '../utils/logger';
 interface StoredModelStats {
     totalUsageTime: number; // seconds
     last100Time?: number; // timestamp
-    history: { timestamp: number; percent: number }[];
     lastUpdateTimestamp: number;
 }
 
@@ -13,9 +12,6 @@ export class StatisticsManager {
     private static readonly KEY_STATS = 'antigravity-hud.stats';
     private context: vscode.ExtensionContext;
     private stats: { [modelId: string]: StoredModelStats } = {};
-    // Max history items to store (e.g. 1 sample per minute * 60 minutes = 1 hour history for speed calc)
-    private static readonly MAX_HISTORY_ITEMS = 60;
-
     private saveTimer: NodeJS.Timeout | null = null;
     private savePending: boolean = false;
     private static readonly SAVE_DEBOUNCE_MS = 5000;
@@ -73,7 +69,6 @@ export class StatisticsManager {
             if (!modelStats) {
                 modelStats = {
                     totalUsageTime: 0,
-                    history: [],
                     lastUpdateTimestamp: now
                 };
                 this.stats[modelId] = modelStats;
@@ -99,19 +94,6 @@ export class StatisticsManager {
                     modelStats.last100Time = now;
                     modelChanged = true;
                 }
-            }
-
-            // Update History (Circular Buffer)
-            // Verify we don't have duplicate timestamps to avoid divide by zero later
-            const lastHistory = modelStats.history[modelStats.history.length - 1];
-
-            // Push if we have no history, or if it's been at least 1 minute since last snapshot
-            if (!lastHistory || (now - lastHistory.timestamp) >= 60000) {
-                modelStats.history.push({ timestamp: now, percent });
-                if (modelStats.history.length > StatisticsManager.MAX_HISTORY_ITEMS) {
-                    modelStats.history.shift();
-                }
-                modelChanged = true;
             }
 
             modelStats.lastUpdateTimestamp = now;
@@ -162,23 +144,6 @@ export class StatisticsManager {
 
         const now = Date.now();
 
-        let speed = 0;
-
-        if (isLikelyBucketed) {
-            speed = this.calculateBucketedSpeed(stored.history);
-        } else {
-            speed = this.calculateContinuousSpeed(stored.history);
-        }
-
-        // Estimated Time Remaining
-        // based on CURRENT percentage and speed
-        const currentPercent = stored.history.length > 0 ? stored.history[stored.history.length - 1].percent : 0;
-        let eta = undefined;
-        if (speed > 0.1 && currentPercent > 0) {
-            const remainingHours = currentPercent / speed;
-            eta = remainingHours * 60; // minutes
-        }
-
         // Usage Since Last 100
         let usageSinceLast100 = 0;
         if (stored.last100Time) {
@@ -188,91 +153,9 @@ export class StatisticsManager {
         return {
             totalUsageTime: stored.totalUsageTime,
             usageSinceLast100,
-            last100Time: stored.last100Time,
-            consumptionSpeed: speed,
-            estimatedTimeRemaining: eta
+            last100Time: stored.last100Time
         };
     }
 
-    private calculateContinuousSpeed(history: { timestamp: number; percent: number }[]): number {
-        if (history.length < 2) {
-            return 0;
-        } else {
-            // proceed
-        }
 
-        const start = history[0];
-        const end = history[history.length - 1];
-        const timeDiffHours = (end.timestamp - start.timestamp) / (1000 * 3600);
-
-        if (timeDiffHours <= 0.05) {
-            return 0;
-        } else {
-            // proceed
-        }
-
-        const percentDiff = start.percent - end.percent;
-        if (percentDiff <= 0) {
-            return 0;
-        } else {
-            return percentDiff / timeDiffHours;
-        }
-    }
-
-    private calculateBucketedSpeed(history: { timestamp: number; percent: number }[]): number {
-        if (history.length < 2) {
-            return 0;
-        } else {
-            // proceed
-        }
-
-        const dropEvents: { timestamp: number; delta: number }[] = [];
-
-        for (let i = 1; i < history.length; i++) {
-            const prev = history[i - 1];
-            const curr = history[i];
-            const delta = prev.percent - curr.percent;
-
-            if (delta > 0.1 && delta < 50) {
-                dropEvents.push({ timestamp: curr.timestamp, delta });
-            } else {
-                // ignore (no change or reset)
-            }
-        }
-
-        // Prefer multiple drop events for stability.
-        if (dropEvents.length >= 2) {
-            const first = dropEvents[0];
-            const last = dropEvents[dropEvents.length - 1];
-
-            const timeDiffHours = (last.timestamp - first.timestamp) / (1000 * 3600);
-            if (timeDiffHours <= 0.05) {
-                return 0;
-            } else {
-                // proceed
-            }
-
-            const totalDrop = dropEvents.reduce((sum, e) => sum + e.delta, 0);
-            if (totalDrop <= 0) {
-                return 0;
-            } else {
-                return totalDrop / timeDiffHours;
-            }
-        } else {
-            // Fallback: use the entire observation window, but require a minimum time window
-            const start = history[0];
-            const end = history[history.length - 1];
-            const timeDiffHours = (end.timestamp - start.timestamp) / (1000 * 3600);
-            const percentDiff = start.percent - end.percent;
-
-            // Need at least ~15 minutes and at least one bucket drop to show a speed.
-            if (timeDiffHours < 0.25) {
-                return 0;
-            } else if (percentDiff < 15) {
-                return 0;
-            } else {
-                return percentDiff / timeDiffHours;
-            }
-        }
-    }
 }

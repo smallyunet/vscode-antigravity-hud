@@ -189,30 +189,6 @@ export class MenuManager {
                 });
             }
 
-            items.push({
-                label: '$(pulse) Consumption Speed',
-                description: stats.consumptionSpeed > 0
-                    ? `~${stats.consumptionSpeed.toFixed(1)}% / hour`
-                    : 'Calculating...',
-                detail: 'Average rate of quota consumption'
-            });
-
-            if (stats.estimatedTimeRemaining) {
-                items.push({
-                    label: '$(hourglass) Estimated Time Remaining',
-                    description: `~${Math.floor(stats.estimatedTimeRemaining / 60)}h ${Math.floor(stats.estimatedTimeRemaining % 60)}m`,
-                    detail: 'Based on current consumption speed'
-                });
-            }
-
-            if (stats.consumptionSpeed > 0) {
-                const fullCycleHours = 100 / stats.consumptionSpeed;
-                items.push({
-                    label: '$(history) Est. Full Cycle',
-                    description: `~${Math.floor(fullCycleHours)}h ${Math.floor((fullCycleHours % 1) * 60)}m`,
-                    detail: 'Estimated time to drain 100% quota at current speed'
-                });
-            }
         } else {
             items.push({
                 label: '$(info) Statistics',
