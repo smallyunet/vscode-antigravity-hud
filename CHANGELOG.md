@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.6] - 2026-03-26
+
+### Added
+- **AI Credits**: Added support for monitoring and displaying AI Credits from the `plan_status` payload without requiring any additional user login.
+
+### Changed
+- **UI Optimization**: Redesigned the hover status tooltip from a heavy Markdown table to a clean, borderless list layout for improved legibility and compatibility with VS Code themes.
+
 ## [0.2.4] - 2026-01-23
 
 ### Changed
