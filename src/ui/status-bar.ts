@@ -375,10 +375,6 @@ export class StatusBarManager {
             return a.modelName.localeCompare(b.modelName);
         });
 
-        // Table header
-        md.appendMarkdown('| Model | Quota | Status | Resets |\n');
-        md.appendMarkdown('|:------|:-----:|:------:|-------:|\n');
-
         for (const model of sortedModels) {
             const percent = formatPercentage(model);
 
@@ -399,20 +395,18 @@ export class StatusBarManager {
             const remainingStr = formatQuotaText(model);
 
             // Format Reset Time
-            let resetStr = '-';
+            let resetStr = '';
             if (model.resetAt) {
                 const diffHours = (model.resetAt.getTime() - Date.now()) / (1000 * 60 * 60);
                 if (diffHours > 24) {
-                    resetStr = formatResetTime(model.resetAt);
+                    resetStr = `$(history) ${formatResetTime(model.resetAt)}`;
                 } else {
-                    resetStr = `${formatAbsoluteTime(model.resetAt)} (${formatResetTime(model.resetAt)})`;
+                    resetStr = `$(history) ${formatAbsoluteTime(model.resetAt)} (${formatResetTime(model.resetAt)})`;
                 }
             }
 
-            md.appendMarkdown(`| ${modelNameCell} | ${remainingStr} | ${statusCell} | ${resetStr} |\n`);
+            md.appendMarkdown(`${modelNameCell} &emsp; ${remainingStr} &ensp; ${statusCell} &ensp; ${resetStr}  \n`);
         }
-
-        md.appendMarkdown('\n');
 
         md.appendMarkdown('\n---\n');
 

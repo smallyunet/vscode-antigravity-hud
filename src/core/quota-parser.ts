@@ -23,32 +23,51 @@ export function parseQuotaResponse(data: any, logger?: ILogger): QuotaResponse {
     // Antigravity's settings panel uses `availableCredits` & `useAICredits`. 
     // They may exist in code_assist_state or at top/user_status levels, overriding legacy `available_prompt_credits`
     
-    // Debug: log all possible credit-related fields we can find
+    // Debug: dump raw response structure to find where AI credits really live
     if (logger) {
-        const creditPaths: Record<string, any> = {};
-        if (codeAssistStatus?.available_credits !== undefined) creditPaths['codeAssistStatus.available_credits'] = codeAssistStatus.available_credits;
-        if (codeAssistStatus?.availableCredits !== undefined) creditPaths['codeAssistStatus.availableCredits'] = codeAssistStatus.availableCredits;
-        if (planStatus?.available_credits !== undefined) creditPaths['planStatus.available_credits'] = planStatus.available_credits;
-        if (planStatus?.availableCredits !== undefined) creditPaths['planStatus.availableCredits'] = planStatus.availableCredits;
-        if (planStatus?.available_ai_credits !== undefined) creditPaths['planStatus.available_ai_credits'] = planStatus.available_ai_credits;
-        if (planStatus?.availableAiCredits !== undefined) creditPaths['planStatus.availableAiCredits'] = planStatus.availableAiCredits;
-        if (planStatus?.available_prompt_credits !== undefined) creditPaths['planStatus.available_prompt_credits'] = planStatus.available_prompt_credits;
-        if (planStatus?.availablePromptCredits !== undefined) creditPaths['planStatus.availablePromptCredits'] = planStatus.availablePromptCredits;
-        if (data?.user_status?.available_credits !== undefined) creditPaths['user_status.available_credits'] = data.user_status.available_credits;
-        if (data?.userStatus?.availableCredits !== undefined) creditPaths['userStatus.availableCredits'] = data.userStatus.availableCredits;
-        if (data?.available_credits !== undefined) creditPaths['data.available_credits'] = data.available_credits;
-        if (data?.availableCredits !== undefined) creditPaths['data.availableCredits'] = data.availableCredits;
-        // Also check for ai_credit specific fields
-        if (data?.userStatus?.aiCredits !== undefined) creditPaths['userStatus.aiCredits'] = data.userStatus.aiCredits;
-        if (data?.user_status?.ai_credits !== undefined) creditPaths['user_status.ai_credits'] = data.user_status.ai_credits;
-        if (data?.userStatus?.planStatus?.availableAiCredits !== undefined) creditPaths['userStatus.planStatus.availableAiCredits'] = data.userStatus.planStatus.availableAiCredits;
-        if (data?.user_status?.plan_status?.available_ai_credits !== undefined) creditPaths['user_status.plan_status.available_ai_credits'] = data.user_status.plan_status.available_ai_credits;
-        // Check credit_status
-        if (data?.userStatus?.creditStatus !== undefined) creditPaths['userStatus.creditStatus'] = JSON.stringify(data.userStatus.creditStatus);
-        if (data?.user_status?.credit_status !== undefined) creditPaths['user_status.credit_status'] = JSON.stringify(data.user_status.credit_status);
+        // Dump all keys at each level
+        const userStatus = data?.userStatus || data?.user_status;
+        if (userStatus) {
+            const usKeys = Object.keys(userStatus);
+            logger.info(`QuotaParser: userStatus keys: ${JSON.stringify(usKeys)}`);
+            
+            // Dump all leaf values that look like credit numbers (> 100)
+            for (const key of usKeys) {
+                const val = userStatus[key];
+                if (typeof val === 'number' && val > 100) {
+                    logger.info(`QuotaParser: userStatus.${key} = ${val}`);
+                } else if (typeof val === 'string' && !isNaN(Number(val)) && Number(val) > 100) {
+                    logger.info(`QuotaParser: userStatus.${key} = "${val}"`);
+                } else if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+                    const subKeys = Object.keys(val);
+                    logger.info(`QuotaParser: userStatus.${key} keys: ${JSON.stringify(subKeys)}`);
+                    for (const sk of subKeys) {
+                        const sv = val[sk];
+                        if (typeof sv === 'number') {
+                            logger.info(`QuotaParser: userStatus.${key}.${sk} = ${sv}`);
+                        } else if (typeof sv === 'string' && sv.length < 100) {
+                            logger.info(`QuotaParser: userStatus.${key}.${sk} = "${sv}"`);
+                        } else if (typeof sv === 'boolean') {
+                            logger.info(`QuotaParser: userStatus.${key}.${sk} = ${sv}`);
+                        } else if (typeof sv === 'object' && sv !== null && !Array.isArray(sv)) {
+                            const deepKeys = Object.keys(sv);
+                            logger.info(`QuotaParser: userStatus.${key}.${sk} keys: ${JSON.stringify(deepKeys)}`);
+                            for (const dk of deepKeys) {
+                                const dv = sv[dk];
+                                if (typeof dv !== 'object') {
+                                    logger.info(`QuotaParser: userStatus.${key}.${sk}.${dk} = ${JSON.stringify(dv)}`);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         
-        if (Object.keys(creditPaths).length > 0) {
-            logger.info(`QuotaParser: AI Credit fields found: ${JSON.stringify(creditPaths)}`);
+        // Also dump top-level data keys
+        if (data) {
+            const topKeys = Object.keys(data);
+            logger.info(`QuotaParser: top-level data keys: ${JSON.stringify(topKeys)}`);
         }
     }
     

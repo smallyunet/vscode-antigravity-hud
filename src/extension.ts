@@ -57,30 +57,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const openSettingsModelsCmd = vscode.commands.registerCommand(
         'antigravity-hud.openSettingsModels',
         async () => {
-            // Try to open the Antigravity Settings > Models panel directly
-            const commandsToTry = [
-                'antigravity.openSettingsModels',
-                'antigravity.openSettings',
-                'gemini.openSettingsModels',
-                'gemini.openSettings',
-                'gemini-code-assist.openSettings',
-            ];
+            const allCommands = await vscode.commands.getCommands(true);
+            
+            // Find all settings-related Antigravity/Gemini commands
+            const settingsCommands = allCommands.filter(cmd => {
+                const lower = cmd.toLowerCase();
+                const isRelevantExtension = lower.includes('antigravity') || lower.includes('gemini');
+                const isSettings = lower.includes('setting');
+                return isRelevantExtension && isSettings;
+            });
 
-            for (const cmd of commandsToTry) {
+            logger.info(`Found settings commands: ${JSON.stringify(settingsCommands)}`);
+
+            if (settingsCommands.length > 0) {
+                // Prefer commands with 'model' in the name
+                const modelCmd = settingsCommands.find(c => c.toLowerCase().includes('model'));
+                const cmdToUse = modelCmd || settingsCommands[0];
+                
                 try {
-                    const allCommands = await vscode.commands.getCommands(true);
-                    if (allCommands.includes(cmd)) {
-                        await vscode.commands.executeCommand(cmd);
-                        logger.info(`Opened Antigravity Settings via command: ${cmd}`);
-                        return;
-                    }
+                    await vscode.commands.executeCommand(cmdToUse);
+                    logger.info(`Opened Settings via command: ${cmdToUse}`);
+                    return;
                 } catch (e) {
-                    // continue to next
+                    logger.warn(`Failed to execute ${cmdToUse}: ${e}`);
                 }
             }
 
             // Fallback: open VS Code settings filtered to antigravity
-            logger.info('No Antigravity settings command found, opening VS Code settings');
+            logger.info('No Antigravity/Gemini settings command found, falling back');
             await vscode.commands.executeCommand('workbench.action.openSettings', 'antigravity-hud');
         }
     );
