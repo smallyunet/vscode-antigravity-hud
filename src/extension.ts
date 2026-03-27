@@ -54,6 +54,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         () => statusBarManager.showQuotaDetails()
     );
 
+    const openSettingsModelsCmd = vscode.commands.registerCommand(
+        'antigravity-hud.openSettingsModels',
+        async () => {
+            // Try to open the Antigravity Settings > Models panel directly
+            const commandsToTry = [
+                'antigravity.openSettingsModels',
+                'antigravity.openSettings',
+                'gemini.openSettingsModels',
+                'gemini.openSettings',
+                'gemini-code-assist.openSettings',
+            ];
+
+            for (const cmd of commandsToTry) {
+                try {
+                    const allCommands = await vscode.commands.getCommands(true);
+                    if (allCommands.includes(cmd)) {
+                        await vscode.commands.executeCommand(cmd);
+                        logger.info(`Opened Antigravity Settings via command: ${cmd}`);
+                        return;
+                    }
+                } catch (e) {
+                    // continue to next
+                }
+            }
+
+            // Fallback: open VS Code settings filtered to antigravity
+            logger.info('No Antigravity settings command found, opening VS Code settings');
+            await vscode.commands.executeCommand('workbench.action.openSettings', 'antigravity-hud');
+        }
+    );
+
     const refreshCmd = vscode.commands.registerCommand(
         'antigravity-hud.refresh',
         () => connectionManager.refresh()
@@ -92,6 +123,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Register disposables
     context.subscriptions.push(
         showQuotaCmd,
+        openSettingsModelsCmd,
         refreshCmd,
         diagnosticsCmd,
         selectModelCmd,

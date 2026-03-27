@@ -26,6 +26,10 @@
         "title": "Antigravity HUD: Show Quota"
       },
       {
+        "command": "antigravity-hud.openSettingsModels",
+        "title": "Antigravity HUD: Open Settings (Models)"
+      },
+      {
         "command": "antigravity-hud.refresh",
         "title": "Antigravity HUD: Refresh"
       },

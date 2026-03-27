@@ -61,7 +61,7 @@ export class StatusBarManager {
             vscode.StatusBarAlignment.Right,
             100
         );
-        this.statusBarItem.command = 'antigravity-hud.showQuota';
+        this.statusBarItem.command = 'antigravity-hud.openSettingsModels';
 
         this.updateDisplay();
         this.statusBarItem.show();
@@ -375,6 +375,10 @@ export class StatusBarManager {
             return a.modelName.localeCompare(b.modelName);
         });
 
+        // Table header
+        md.appendMarkdown('| Model | Quota | Status | Resets |\n');
+        md.appendMarkdown('|:------|:-----:|:------:|-------:|\n');
+
         for (const model of sortedModels) {
             const percent = formatPercentage(model);
 
@@ -399,15 +403,16 @@ export class StatusBarManager {
             if (model.resetAt) {
                 const diffHours = (model.resetAt.getTime() - Date.now()) / (1000 * 60 * 60);
                 if (diffHours > 24) {
-                    resetStr = formatResetTime(model.resetAt); // e.g., "103h 13m"
+                    resetStr = formatResetTime(model.resetAt);
                 } else {
                     resetStr = `${formatAbsoluteTime(model.resetAt)} (${formatResetTime(model.resetAt)})`;
                 }
             }
 
-            md.appendMarkdown(`- ${modelNameCell}  \n`);
-            md.appendMarkdown(`  &nbsp;&nbsp;$(dashboard) ${remainingStr} &emsp; ${statusCell} &emsp; $(history) ${resetStr}\n\n`);
+            md.appendMarkdown(`| ${modelNameCell} | ${remainingStr} | ${statusCell} | ${resetStr} |\n`);
         }
+
+        md.appendMarkdown('\n');
 
         md.appendMarkdown('\n---\n');
 
